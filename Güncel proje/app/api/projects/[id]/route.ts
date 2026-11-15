@@ -19,8 +19,9 @@ export async function PUT(request: Request, context: RouteContext) {
     if (typeof values.bina_sayisi === 'number' && values.bina_sayisi > MAX_BUILDINGS) throw new Error('Bina sayısı en fazla 100 olabilir.');
     buildings = validateBuildings(body.binalar_detay, values.bina_sayisi as number | null);
     hasMeasure = Object.prototype.hasOwnProperty.call(body, 'daire_metraj_detaylari');
-    const existing = db.prepare('SELECT binalar_detay, daire_metraj_detaylari FROM projects WHERE id = ?').get(id) as { binalar_detay: string | null; daire_metraj_detaylari: string | null } | undefined;
+    const existing = db.prepare('SELECT binalar_detay, daire_metraj_detaylari, notlar FROM projects WHERE id = ?').get(id) as { binalar_detay: string | null; daire_metraj_detaylari: string | null; notlar: string | null } | undefined;
     if (!existing) return NextResponse.json({ error: 'Proje bulunamadı.' }, { status: 404 });
+    if (!Object.prototype.hasOwnProperty.call(body, 'notlar')) values.notlar = existing.notlar;
     const requested = hasMeasure ? body.daire_metraj_detaylari : existing.daire_metraj_detaylari ? JSON.parse(existing.daire_metraj_detaylari) : null;
     if (requested !== null) measure = JSON.stringify(validateMeasure(JSON.parse(buildings ?? existing.binalar_detay ?? '[]'), values.insaat_alani as number, requested));
   }

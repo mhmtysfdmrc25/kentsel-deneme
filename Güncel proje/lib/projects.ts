@@ -1,6 +1,6 @@
 export const textFields = ['semt', 'ada', 'parsel'] as const;
 export const numberFields = ['arsa_alani', 'taks', 'kaks', 'bina_sayisi', 'daire_sayisi', 'dukkan_sayisi', 'insaat_alani'] as const;
-export const projectFields = [...textFields, ...numberFields, 'imar_tipi', 'riskli_yapi'] as const;
+export const projectFields = [...textFields, ...numberFields, 'imar_tipi', 'riskli_yapi', 'notlar'] as const;
 export type Field = typeof projectFields[number];
 export type Project = Record<Field, string | number | null> & { id: number; created_at: string | null; updated_at: string | null; binalar_detay: string | null; daire_metraj_detaylari: string | null };
 export function projectName(project: Project) {
@@ -23,6 +23,9 @@ export function validateProject(input: unknown): Record<Field, string | number |
     if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || (key.endsWith('sayisi') && !Number.isSafeInteger(value))) throw new Error('Sayısal alanlar geçerli ve sıfırdan küçük olmayan değerler içermelidir; adetler tam sayı olmalıdır.');
     output[key] = value;
   }
+  if (data.notlar == null || data.notlar === '') output.notlar = null;
+  else if (typeof data.notlar !== 'string' || data.notlar.length > 10000) throw new Error('Proje notu en fazla 10.000 karakter olmalıdır.');
+  else output.notlar = data.notlar.trim() || null;
   for (const [key, choices] of [['imar_tipi', ['Konut', 'Ticaret', 'Karma']], ['riskli_yapi', ['Evet', 'Hayır']]] as const) {
     const value = data[key];
     if (value == null || value === '') output[key] = null;

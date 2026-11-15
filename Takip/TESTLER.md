@@ -33,3 +33,7 @@ Bu dosyada çalıştırılan kontroller ve sonuçları tutulur.
 
 - Üretim derlemesi başarılı; izole API testlerinde bodrum, giriş ve normal katların manuel dağılımıyla kayıt, giriş hariç eşit dağılımla güncelleme, eşleşmeyen toplamın reddi ve silme başarılı.
 - Giriş ve normal kat içeren metraj kaydı ve genel brüt toplamı doğrulandı. Tarayıcıdaki etkileşimler bu çalışmada doğrulanmadı.
+
+## Proje notları
+
+- Not alanı eklendikten sonra üretim derlemesi ve TypeScript kontrolü başarılı. Tarayıcıda kayıt ve düzenleme akışı ayrıca doğrulanmadı.
