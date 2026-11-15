@@ -37,3 +37,7 @@ Bu dosyada çalıştırılan kontroller ve sonuçları tutulur.
 ## Proje notları
 
 - Not alanı eklendikten sonra üretim derlemesi ve TypeScript kontrolü başarılı. Tarayıcıda kayıt ve düzenleme akışı ayrıca doğrulanmadı.
+
+## Mahalle ve proje adı
+
+- Mahalle alanı ve proje adı sıralaması değişikliğinden sonra üretim derlemesi ve TypeScript kontrolü başarılı. Tarayıcıda kayıt ve düzenleme akışı ayrıca doğrulanmadı.

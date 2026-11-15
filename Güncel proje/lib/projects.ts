@@ -1,10 +1,12 @@
-export const textFields = ['semt', 'ada', 'parsel'] as const;
+export const textFields = ['semt', 'mahalle', 'ada', 'parsel'] as const;
 export const numberFields = ['arsa_alani', 'taks', 'kaks', 'bina_sayisi', 'daire_sayisi', 'dukkan_sayisi', 'insaat_alani'] as const;
 export const projectFields = [...textFields, ...numberFields, 'imar_tipi', 'riskli_yapi', 'notlar'] as const;
 export type Field = typeof projectFields[number];
 export type Project = Record<Field, string | number | null> & { id: number; created_at: string | null; updated_at: string | null; binalar_detay: string | null; daire_metraj_detaylari: string | null };
 export function projectName(project: Project) {
-  const location = [project.semt, project.ada != null && project.ada !== '' ? `Ada ${project.ada}` : '', project.parsel != null && project.parsel !== '' ? `Parsel ${project.parsel}` : ''].filter(Boolean).join(' · ');
+  const parcel = [project.ada != null && project.ada !== '' ? `${project.ada} Ada` : '', project.parsel != null && project.parsel !== '' ? `${project.parsel} Parsel` : ''].filter(Boolean).join(' ');
+  const district = [project.semt, project.mahalle].filter(Boolean).join(' / ');
+  const location = [district, parcel].filter(Boolean).join(' · ');
   return location || `İsimsiz proje #${project.id}`;
 }
 export function validateProject(input: unknown): Record<Field, string | number | null> {

@@ -10,7 +10,7 @@ export function GET() {
   try {
     const projects = db.prepare('SELECT * FROM projects').all() as Project[];
     const collator = new Intl.Collator('tr', { sensitivity: 'base', numeric: true });
-    projects.sort((a, b) => collator.compare(String(a.semt ?? ''), String(b.semt ?? '')) || collator.compare(String(a.ada ?? ''), String(b.ada ?? '')) || a.id - b.id);
+    projects.sort((a, b) => collator.compare(String(a.semt ?? ''), String(b.semt ?? '')) || collator.compare(String(a.mahalle ?? ''), String(b.mahalle ?? '')) || collator.compare(String(a.ada ?? ''), String(b.ada ?? '')) || collator.compare(String(a.parsel ?? ''), String(b.parsel ?? '')) || a.id - b.id);
     return NextResponse.json(projects);
   } catch (error) {
     console.error(error);
