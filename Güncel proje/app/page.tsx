@@ -1,0 +1,14 @@
+'use client';
+import { useState } from 'react';
+
+const tabs = ['Dosya Yönetimi', 'Maliyet Hesabı', 'Kâr/Zarar', 'Teklif Çıktısı'];
+const descriptions = ['Projelerinizi ada ve parsel bilgileriyle düzenleyin.', 'Yapı bilgilerini ve maliyet kalemlerini bir arada değerlendirin.', 'Gelirleri ve proje paylarını kârlılık üzerinden inceleyin.', 'Hazırladığınız fizibiliteyi teklif çıktısına dönüştürün.'];
+export default function Home() {
+  const [active, setActive] = useState(0);
+  return <main className="min-h-screen bg-[#f6f8f8] text-[#142e32]">
+    <header className="border-b border-[#dfe8e6] bg-white"><div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-5 px-6 py-5 lg:px-10"><div className="flex items-center gap-3"><div className="grid h-10 w-10 place-items-center rounded-xl bg-[#174b48] text-lg font-bold text-white">K</div><div><div className="font-bold tracking-tight">KENTSEL</div><div className="text-xs text-[#718482]">Fizibilite çalışma alanı</div></div></div><span className="rounded-full border border-[#dbe8e3] bg-[#f3f8f5] px-3 py-1.5 text-xs font-medium text-[#3e6c5e]">● Yerel çalışma alanı</span></div></header>
+    <div className="mx-auto max-w-7xl px-6 lg:px-10"><nav aria-label="Ana menü" className="flex gap-8 overflow-x-auto border-b border-[#dfe8e6]">{tabs.map((tab, i) => <button key={tab} onClick={() => setActive(i)} aria-current={active === i ? 'page' : undefined} className={`whitespace-nowrap border-b-2 py-5 text-sm font-medium transition ${active === i ? 'border-[#1b6258] text-[#1b6258]' : 'border-transparent text-[#788987] hover:text-[#174b48]'}`}>{tab}</button>)}</nav>
+    <section className="py-12"><p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#7c908c]">Proje yönetimi / {tabs[active]}</p><div className="mt-5 flex flex-wrap items-end justify-between gap-6"><div><h1 className="text-3xl font-semibold tracking-tight md:text-4xl">{tabs[active]}</h1><p className="mt-3 max-w-xl text-sm leading-6 text-[#70817e]">{descriptions[active]}</p></div><span className="rounded-full bg-[#e7efed] px-3 py-1.5 text-xs font-medium text-[#50756d]">Geliştirme aşamasında</span></div>
+    <div className="mt-10 rounded-2xl border border-[#e2eae8] bg-white p-8 shadow-[0_12px_35px_rgba(20,46,50,0.04)] md:p-12"><div className="grid h-12 w-12 place-items-center rounded-xl bg-[#ecf4f1] text-xl text-[#367467]">▤</div><h2 className="mt-6 text-lg font-semibold">Çalışma alanınız hazırlanıyor</h2><p className="mt-2 max-w-lg text-sm leading-6 text-[#7a8b88]">Bu bölümün işlevleri yol haritasındaki ilgili aşamada eklenecek. Şimdilik üst menüden diğer bölümleri inceleyebilirsiniz.</p><div className="mt-8 border-t border-[#edf1f0] pt-5 text-xs text-[#98a7a4]">KENTSEL DÖNÜŞÜM · FİZİBİLİTE VE TEKLİF</div></div></section></div>
+  </main>;
+}
