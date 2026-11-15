@@ -1,0 +1,64 @@
+// Run after npm run build. All writes are confined to a fresh temporary directory.
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { spawn } = require('node:child_process');
+const net = require('node:net');
+const Database = require('better-sqlite3');
+const { simulate, emptyScenario, validateScenario } = require('../lib/scenario.ts');
+const { quickTotal, detailedTotal } = require('../lib/costs.ts');
+
+async function main() {
+  const input = { arsa_alani: 1000, taks: 0.4, kaks: 2, daire_sayisi: 31, dukkan_sayisi: 1, insaat_alani: 1600, binalar_detay: JSON.stringify([{ daire_sayisi: 31, dukkan_sayisi: 1, normal_kat: 8, bodrum_kat: 1, giriste_daire_yok: false }]) };
+  const test = simulate(input, { ...emptyScenario(), bonus: true, slope: true, exposedFloors: 2, narrow: true, heightLimit: true });
+  assert.equal(test.kaksArea, 2000); assert.equal(test.gross, 2600); assert.equal(test.slopeArea, 800);
+  assert.equal(test.units, 32); assert.equal(test.floors, 10); assert.equal(test.constraint, 'both');
+  assert.ok(test.shelter && test.elevator && test.highRise && test.caretaker);
+  assert.equal(simulate(input, { ...emptyScenario(), narrow: true }).constraint, 'narrow');
+  assert.equal(simulate(input, { ...emptyScenario(), heightLimit: true }).constraint, 'height');
+  assert.equal(simulate({ ...input, arsa_alani: null }, emptyScenario()).gross, null);
+  assert.throws(() => validateScenario({ ...emptyScenario(), exposedFloors: -1 }));
+  const quick = { parking: true, parkingArea: 200, parkingRate: 100, structureRate: 200, demolition: 1000, rent: 2000, fees: 3000 };
+  assert.equal(quickTotal(1000, quick), 186000); assert.equal(quickTotal(1000, { ...quick, parking: false }), 206000);
+  assert.equal(quickTotal(1000, { ...quick, parkingArea: 1001 }), null);
+  assert.equal(detailedTotal([{ id: 'x', name: 'Beton', quantity: 10, unit: 'm³', price: 500 }]), 5000);
+
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kentsel-regresyon-'));
+  fs.cpSync(path.join(process.cwd(), '.next'), path.join(root, '.next'), { recursive: true });
+  fs.copyFileSync(path.join(process.cwd(), 'package.json'), path.join(root, 'package.json'));
+  fs.symlinkSync(path.join(process.cwd(), 'node_modules'), path.join(root, 'node_modules'), 'junction');
+  fs.mkdirSync(path.join(root, 'data'));
+  const db = new Database(path.join(root, 'data', 'kentsel.sqlite'));
+  db.exec("CREATE TABLE projects (id INTEGER PRIMARY KEY AUTOINCREMENT, semt TEXT NOT NULL, ada TEXT NOT NULL, parsel TEXT NOT NULL, created_at TEXT, updated_at TEXT); INSERT INTO projects (semt, ada, parsel) VALUES ('Eski', '1', '2')");
+  db.close();
+  const port = await new Promise((resolve, reject) => { const s = net.createServer(); s.once('error', reject); s.listen(0, '127.0.0.1', () => { const port = s.address().port; s.close(() => resolve(port)); }); });
+  const server = spawn(process.execPath, [path.join(root, 'node_modules', 'next', 'dist', 'bin', 'next'), 'start', '-H', '127.0.0.1', '-p', String(port)], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
+  let output = ''; server.stdout.on('data', d => { output += d; }); server.stderr.on('data', d => { output += d; });
+  const base = `http://127.0.0.1:${port}/api/projects`;
+  const call = async (suffix = '', method = 'GET', body) => { const r = await fetch(base + suffix, { method, headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) }); return [r.status, r.status === 204 ? null : await r.json()]; };
+  try {
+    let ready = false;
+    for (let i = 0; i < 100; i++) { try { await fetch(base); ready = true; break; } catch { if (server.exitCode !== null) break; await new Promise(resolve => setTimeout(resolve, 100)); } }
+    if (!ready) throw new Error('Test sunucusu başlatılamadı: ' + output);
+    let [, existing] = await call(); assert.equal(existing[0].semt, 'Eski'); assert.equal(existing[0].architectural_scenarios, null);
+    const building = { ad: 'A', daire_sayisi: 2, dukkan_sayisi: 0, bodrum_kat: 0, normal_kat: 1, esit_dagilim: false, kat_daireleri: [1, 1], bodrumda_daire_yok: true, bodrum_daireleri: [], giriste_daire_yok: false };
+    const floor = id => ({ id, ortak_alan: 10, daireler: [{ net: 50, brut: 60 }] });
+    const measure = { binalar: [{ bina_index: 0, katlar: [floor('normal-0'), floor('normal-1')] }] };
+    const project = { semt: 'Avcılar', mahalle: 'Ambarlı', ada: '12', parsel: '34', notlar: 'Test notu', arsa_alani: 1000, taks: 0.4, kaks: 2, insaat_alani: 200, bina_sayisi: 1, binalar_detay: [building], daire_metraj_detaylari: measure };
+    let [status, created] = await call('', 'POST', project); assert.equal(status, 201); assert.equal(created.mahalle, 'Ambarlı');
+    assert.equal(JSON.parse(created.daire_metraj_detaylari).toplam_genel_brut, 200);
+    const id = created.id, rows = [{ id: '1', name: 'Beton', quantity: 10, unit: 'm³', price: 500 }];
+    [status] = await call(`/${id}/cost`, 'PUT', { mode: 'quick', quick: { ...quick, parkingArea: 50 }, detailed: rows }); assert.equal(status, 200);
+    [status] = await call(`/${id}/cost`, 'PUT', { mode: 'quick', quick: { ...quick, parkingArea: 201 }, detailed: rows }); assert.equal(status, 400);
+    [status] = await call(`/${id}/cost`, 'PUT', { mode: 'detailed', quick, detailed: rows }); assert.equal(status, 200);
+    const scenario = { ...emptyScenario(), bonus: true, slope: true, exposedFloors: 2, projection: true, projectionType: 'closed', narrow: true, heightLimit: true };
+    let saved; [status, saved] = await call(`/${id}/scenario`, 'PUT', scenario); assert.equal(status, 200); assert.deepEqual(JSON.parse(saved.architectural_scenarios), scenario);
+    [status] = await call(`/${id}/scenario`, 'PUT', { ...scenario, exposedFloors: -1 }); assert.equal(status, 400);
+    [status, saved] = await call(`/${id}`, 'PUT', { ...project, semt: 'Güncel' }); assert.equal(status, 200); assert.equal(saved.cost_mode, 'detailed'); assert.deepEqual(JSON.parse(saved.architectural_scenarios), scenario);
+    [status] = await call('', 'POST', { bina_sayisi: 1, binalar_detay: [{ ...building, daire_sayisi: 3 }] }); assert.equal(status, 400);
+    [status] = await call(`/${id}`, 'DELETE'); assert.equal(status, 204);
+    console.log('Simülasyon, geçiş, metraj, bina dağılımı, maliyet ve proje CRUD kontrolleri başarılı.');
+  } finally { server.kill('SIGTERM'); }
+}
+main().catch(error => { console.error(error); process.exitCode = 1; });

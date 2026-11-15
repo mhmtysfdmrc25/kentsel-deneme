@@ -1,8 +1,9 @@
 'use client';
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import type { Project } from '@/lib/projects';
+import { savedCostTotal } from '@/lib/costs';
 
-type State = { projects: Project[]; activeProject: Project | null; selectProject: (id: number | null) => void; refresh: () => Promise<void>; loading: boolean; error: string };
+type State = { projects: Project[]; activeProject: Project | null; activeCostTotal: number | null; selectProject: (id: number | null) => void; refresh: () => Promise<void>; loading: boolean; error: string };
 const Context = createContext<State | null>(null);
 export function ProjectProvider({ children }: { children: ReactNode }) {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -28,7 +29,9 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     if (activeId === null) localStorage.removeItem('activeProjectId');
     else localStorage.setItem('activeProjectId', String(activeId));
   }, [activeId, initialized]);
-  return <Context.Provider value={{ projects, activeProject: projects.find(p => p.id === activeId) ?? null, selectProject: setActiveId, refresh, loading, error }}>{children}</Context.Provider>;
+  const activeProject = projects.find(p => p.id === activeId) ?? null;
+  const activeCostTotal = savedCostTotal(activeProject);
+  return <Context.Provider value={{ projects, activeProject, activeCostTotal, selectProject: setActiveId, refresh, loading, error }}>{children}</Context.Provider>;
 }
 export function useProjects() {
   const context = useContext(Context);

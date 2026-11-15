@@ -6,9 +6,11 @@ import { MeasureModal } from '@/components/measure-modal';
 import { buildMeasure, type Measure } from '@/lib/metraj';
 import { BuildingCards } from '@/components/building-cards';
 import { FrequentInput } from '@/components/frequent-input';
+import { CostPanel } from '@/components/cost-panel';
+import { ScenarioPanel } from '@/components/scenario-panel';
 import { emptyBuilding, distributionError, MAX_BUILDINGS, type Building } from '@/lib/buildings';
 
-const tabs = ['Dosya Yönetimi', 'Maliyet Hesabı', 'Kâr/Zarar', 'Teklif Çıktısı'];
+const tabs = ['Dosya Yönetimi', 'Maliyet Hesabı', 'Mimari Analiz & Senaryolar', 'Kâr/Zarar', 'Teklif Çıktısı'];
 const fields: { key: Field; label: string; type?: string; hint?: string; step?: string; options?: string[] }[] = [
   { key: 'semt', label: 'Semt', hint: 'Örn: Kadıköy' }, { key: 'mahalle', label: 'Mahalle', hint: "Tapu Kadastro'da geçen mahalle ismi" }, { key: 'ada', label: 'Ada' }, { key: 'parsel', label: 'Parsel' },
   { key: 'kaks', label: 'KAKS / Emsal', type: 'number', hint: 'Örn: 2.0', step: '0.01' },
@@ -123,6 +125,6 @@ export default function Home() {
         <div className="rounded-2xl border border-[#e2eae8] bg-white p-6 shadow-sm"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-wider text-[#739088]">Çalışma alanı</p><h2 className="mt-2 text-xl font-semibold">Projeler</h2><p className="mt-2 text-sm text-[#788986]">Semt, mahalle, ada ve parsel sırasına göre listelenir.</p></div><span className="rounded-full bg-[#edf4f1] px-3 py-1 text-xs font-semibold text-[#4c786b]">{projects.length} proje</span></div>
           {(error || loadError) && <p role="alert" className="mt-5 text-sm text-red-700">{error || loadError}</p>}{message && <p role="status" className="mt-5 text-sm text-[#236b53]">{message}</p>}
           {loading ? <p className="py-12 text-center text-sm text-[#788986]">Projeler yükleniyor…</p> : projects.length === 0 ? <p className="mt-6 rounded-xl border border-dashed border-[#dbe6e2] p-10 text-center text-sm text-[#788986]">Henüz proje yok.</p> : <div className="mt-6 grid gap-3 sm:grid-cols-2">{projects.map(project => <article key={project.id} className="rounded-xl border border-[#e2eae8] bg-[#fbfcfc] p-5"><div className="flex justify-between gap-2"><span className="text-xl text-[#4b8171]">▤</span>{activeProject?.id === project.id && <span className="text-xs font-semibold text-[#367a65]">Aktif</span>}</div><h3 className="mt-4 break-words font-semibold">{projectName(project)}</h3><div className="mt-5 flex gap-5"><button disabled={busy} onClick={() => edit(project)} aria-label={`${projectName(project)} düzenle`} className="text-sm font-semibold text-[#216a5e] disabled:opacity-50">Düzenle</button><button disabled={busy} onClick={() => remove(project)} aria-label={`${projectName(project)} sil`} className="text-sm font-semibold text-[#a44747] disabled:opacity-50">Sil</button></div></article>)}</div>}
-        </div></div> : <div className="mt-10 rounded-2xl border border-[#e2eae8] bg-white p-10 text-sm text-[#788986]">Bu bölümün işlevleri ilgili aşamada eklenecek.</div>}</section></div>
+        </div></div> : tab === 1 ? (activeProject ? <CostPanel key={activeProject.id} project={activeProject} /> : <div role="status" className="mt-10 rounded-2xl border border-[#e2eae8] bg-white p-10 text-sm text-[#788986]">Lütfen işlem yapmak için üst menüden bir proje seçin.</div>) : tab === 2 ? (activeProject ? <ScenarioPanel key={activeProject.id} project={activeProject} /> : <div role="status" className="mt-10 rounded-2xl border border-[#e2eae8] bg-white p-10 text-sm text-[#788986]">Lütfen işlem yapmak için üst menüden bir proje seçin.</div>) : <div className="mt-10 rounded-2xl border border-[#e2eae8] bg-white p-10 text-sm text-[#788986]">Bu bölümün işlevleri ilgili aşamada eklenecek.</div>}</section></div>
   </main>;
 }

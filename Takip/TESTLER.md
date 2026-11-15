@@ -45,3 +45,19 @@ Bu dosyada çalıştırılan kontroller ve sonuçları tutulur.
 ## Sık kullanılan değerler
 
 - Semt, mahalle, KAKS ve TAKS önerileri eklendikten sonra üretim derlemesi ve TypeScript kontrolü başarılı. Öneri listesinin tarayıcı etkileşimi ayrıca doğrulanmadı.
+
+## Aşama 3: Maliyet motoru
+
+- Üretim derlemesi ve TypeScript kontrolü başarılı.
+- Hızlı modda otoparklı ve otoparksız hesap, alan aşımı kontrolü ve detaylı kalemlerin toplamı doğrulandı.
+- İzole veritabanında proje oluşturma, iki maliyet modunu kaydetme, maliyetleri koruyarak proje güncelleme, listeleme ve silme başarılı; otopark alanının toplam alanı aşması reddedildi.
+- Tarayıcı otomasyonu başlatılamadı; iki sekmenin etkileşimleri ve birinci ekran görsel olarak doğrulanamadı.
+
+## Mimari analiz ve tekrar çalıştırılabilir regresyon
+
+- `npm run build` başarılı; `npm test` izole geçici veritabanı ve yerel sunucu üzerinde başarılı.
+- Eski şema geçişi, proje oluşturma/düzenleme/silme, bina dağılımı, metraj, iki maliyet modu ve senaryo kaydı ile hatalı girdilerin reddi kontrol edildi.
+- Boş senaryolu bir projede maliyet ve proje işlemleri tamamlandı; senaryo kaydı sonrası proje güncellemesinde maliyet ve senaryo verileri korundu.
+- Kısıt kombinasyonları, emsal/kot hesapları ve eşik taramaları birim seviyesinde kontrol edildi.
+- Tarayıcı otomasyonu başlatılamadı; yeni ve mevcut ekranların görsel ve fareyle etkileşim regresyonu doğrulanamadı. Daha önce yalnızca tarayıcı kontrolü bekleyen senaryolar bu nedenle hâlâ açık.
+- Yeniden çalıştırma: proje dizininde önce `npm run build`, sonra `npm test`.

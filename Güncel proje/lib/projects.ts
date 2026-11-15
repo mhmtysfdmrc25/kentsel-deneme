@@ -2,7 +2,7 @@ export const textFields = ['semt', 'mahalle', 'ada', 'parsel'] as const;
 export const numberFields = ['arsa_alani', 'taks', 'kaks', 'bina_sayisi', 'daire_sayisi', 'dukkan_sayisi', 'insaat_alani'] as const;
 export const projectFields = [...textFields, ...numberFields, 'imar_tipi', 'riskli_yapi', 'notlar'] as const;
 export type Field = typeof projectFields[number];
-export type Project = Record<Field, string | number | null> & { id: number; created_at: string | null; updated_at: string | null; binalar_detay: string | null; daire_metraj_detaylari: string | null };
+export type Project = Record<Field, string | number | null> & { id: number; created_at: string | null; updated_at: string | null; binalar_detay: string | null; daire_metraj_detaylari: string | null; cost_mode: string | null; quick_cost_data: string | null; detailed_cost_data: string | null; architectural_scenarios: string | null };
 export function projectName(project: Project) {
   const parcel = [project.ada != null && project.ada !== '' ? `${project.ada} Ada` : '', project.parsel != null && project.parsel !== '' ? `${project.parsel} Parsel` : ''].filter(Boolean).join(' ');
   const district = [project.semt, project.mahalle].filter(Boolean).join(' / ');
