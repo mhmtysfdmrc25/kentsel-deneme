@@ -21,7 +21,7 @@ export function BuildingCards({ buildings, onChange }: { buildings: Building[]; 
         set({ daire_sayisi: null, bodrum_kat: null, normal_kat: null, kat_daireleri: [], bodrum_daireleri: [], esit_dagilim: false });
       }
       else set({ [key]: value });
-    }} className={input} /></div>;
+    }} className={input} />{key === 'normal_kat' && <p className="mt-1 text-xs text-[#788986]">Not: Giriş Kat <strong>Hariç</strong></p>}</div>;
     return <fieldset key={i} className="rounded-xl border border-[#dce8e3] bg-[#f8fbf9] p-4 sm:p-5"><legend className="px-2 text-sm font-semibold text-[#27685a]">{i + 1}. Bina</legend><div className="grid gap-4 sm:grid-cols-2">
       <div className="sm:col-span-2"><label htmlFor={`b-${i}-ad`} className="mb-2 block text-sm font-medium">Bina Adı</label><input id={`b-${i}-ad`} type="text" maxLength={100} value={b.ad} onChange={event => set({ ad: event.target.value })} className={input} /><p className="mt-1 text-xs text-[#81928d]">Örn: A Blok</p></div>
       {countField('Mevcut Daire Sayısı', 'daire_sayisi')}{countField('Mevcut Dükkan Sayısı', 'dukkan_sayisi')}
