@@ -9,6 +9,7 @@ const Database = require('better-sqlite3');
 const { simulate, emptyScenario, validateScenario } = require('../lib/scenario.ts');
 const { quickTotal, detailedTotal } = require('../lib/costs.ts');
 const { deriveSection, emptyDesign, validateDesign, validateSimulator } = require('../lib/simulator.ts');
+const { DEFAULT_RULE_SETTINGS, evaluateImarRules, locksFor, normalizeRuleSettings } = require('../lib/imarRules.ts');
 
 function testSection() {
   const parcel = { arsa_alani: 1000, taks: 0.4, kaks: 2 };
@@ -73,8 +74,77 @@ function testSection() {
   assert.deepEqual(validateSimulator(scenario), scenario);
 }
 
+function testRuleSection() {
+  const parcel = { semt: 'Avcılar', arsa_alani: 1000, taks: 0.4, kaks: 4 };
+  const scenario = { ...emptyScenario(), bonus: true, narrow: true, heightLimit: true };
+  const rules = {
+    ...DEFAULT_RULE_SETTINGS,
+    use: 'ground-commercial', order: 'attached', frontGarden: false, sideProjection: true,
+    projection: 'closed', roof: 'mansard', mezzanine: true, portico: true,
+  };
+  const design = {
+    ...emptyDesign(), normalFloors: 7, contractorFloors: ['ground'], rules,
+    units: { 'ground:0': { isContractorShare: false }, 'normal-7:1': { isContractorShare: true }, 'basement-1:0': { isContractorShare: true } },
+  };
+  const section = deriveSection(parcel, scenario, design);
+  const floor = id => section.floors.find(value => value.id === id);
+  assert.equal(section.projection, 'open');
+  assert.equal(section.roof, 'mansard');
+  assert.equal(floor('roof').units.length, 0);
+  assert.equal(floor('ground').units[0].type, 'shop');
+  assert.equal(floor('ground').units[0].isContractorShare, false);
+  assert.equal(floor('ground').units[1].isContractorShare, true);
+  assert.equal(floor('normal-7').units[0].isContractorShare, false);
+  assert.equal(floor('normal-7').units[1].isContractorShare, true);
+  assert.equal(floor('basement-1').units[0].type, 'storage');
+  assert.equal(floor('basement-1').units[0].isContractorShare, false);
+  assert.ok(!floor('basement-1').units[0].allowedTypes.includes('apartment'));
+  assert.equal(section.totalUnits, 16);
+  assert.equal(section.totalFloors, 10);
+
+  const report = evaluateImarRules(parcel, design, section, rules, scenario);
+  assert.equal(report.calculations.bonusPool, 1200);
+  assert.equal(report.calculations.contractor.count, 2);
+  assert.equal(report.calculations.contractor.area, 400);
+  assert.equal(report.calculations.owner.count, 14);
+  const blockRules = { ...rules, regime: 'block', blockWidth: 10, blockDepth: 20 };
+  const blockSection = deriveSection(parcel, scenario, { ...design, rules: blockRules });
+  assert.equal(blockSection.floors.find(value => value.id === 'normal-1').area, 200);
+  assert.ok(report.legalNotes.some(note => note.id === 'lost-emsal' && note.severity === 'critical'));
+  assert.ok(report.legalNotes.some(note => note.id === 'elevator' && note.source));
+  const normalized = normalizeRuleSettings(parcel, design, rules, scenario);
+  assert.equal(normalized.sideGarden, false);
+  assert.equal(normalized.sideProjection, false);
+  assert.equal(normalized.mezzanine, false);
+  assert.equal(normalized.portico, true);
+  assert.equal(locksFor(parcel, design, { ...rules, use: 'mixed' }, scenario).mezzanine.disabled, true);
+  assert.equal(locksFor(parcel, design, { ...rules, use: 'commercial' }, scenario).mezzanine.disabled, true);
+
+  const residential = { ...DEFAULT_RULE_SETTINGS, subasman: 1 };
+  const basementDesign = { ...emptyDesign(), serviceBasement: false, rules: residential };
+  const flat = deriveSection(parcel, emptyScenario(), basementDesign);
+  assert.equal(flat.floors.find(value => value.id === 'basement-1').units[0].type, 'apartment');
+  assert.equal(flat.floors.find(value => value.id === 'basement-2').units[0].type, 'storage');
+  const exposed = { ...emptyScenario(), slope: true };
+  const withCrest = { ...residential, flood: true, floodCrest: 12, basementOpeningElevation: 13.5 };
+  assert.equal(locksFor(parcel, basementDesign, withCrest, exposed).basementHabitation.disabled, false);
+  const lowCrest = { ...withCrest, basementOpeningElevation: 13.49, basementParking: true, basementOpenings: true };
+  const flood = deriveSection(parcel, exposed, { ...basementDesign, serviceBasement: true, rules: lowCrest });
+  const basement = flood.floors.find(value => value.id === 'basement-1');
+  assert.deepEqual(basement.units[0].allowedTypes, ['storage']);
+  assert.equal(flood.floors.find(value => value.id === 'basement-2').serviceLabel, 'SIĞINAK / TEKNİK ALAN');
+  const floodSettings = normalizeRuleSettings(parcel, basementDesign, lowCrest, exposed);
+  assert.equal(floodSettings.basementParking, false);
+  assert.equal(floodSettings.basementOpenings, false);
+
+  assert.deepEqual(validateDesign(emptyDesign()), emptyDesign());
+  assert.equal(validateDesign(design).units['ground:0'].isContractorShare, false);
+  assert.throws(() => validateDesign({ ...design, units: { 'ground:0': { isContractorShare: 'true' } } }), /Kesit seçimleri/);
+}
+
 async function main() {
   testSection();
+  testRuleSection();
   const input = { arsa_alani: 1000, taks: 0.4, kaks: 2, daire_sayisi: 31, dukkan_sayisi: 1, insaat_alani: 1600, binalar_detay: JSON.stringify([{ daire_sayisi: 31, dukkan_sayisi: 1, normal_kat: 8, bodrum_kat: 1, giriste_daire_yok: false }]) };
   const test = simulate(input, { ...emptyScenario(), bonus: true, slope: true, exposedFloors: 2, narrow: true, heightLimit: true });
   assert.equal(test.kaksArea, 2000); assert.equal(test.gross, 2600); assert.equal(test.slopeArea, 800);
@@ -149,9 +219,42 @@ async function main() {
     assert.equal(status, 200);
     assert.equal(saved.cost_mode, 'quick');
     assert.deepEqual(JSON.parse(saved.architectural_scenarios), sectionScenario);
+    const ruleDesign = {
+      ...sectionScenario.design,
+      normalFloors: 7,
+      rules: { ...DEFAULT_RULE_SETTINGS, use: 'mixed', order: 'attached', projection: 'closed', roof: 'terrace', mezzanine: true, sideProjection: true },
+      units: {
+        ...sectionScenario.design.units,
+        'ground:0': { type: 'shop', isContractorShare: false },
+        'ground:1': { isContractorShare: true },
+      },
+    };
+    [status, saved] = await call(`/${id}/scenario`, 'PUT', { ...scenario, design: ruleDesign });
+    assert.equal(status, 200);
+    const persisted = JSON.parse(saved.architectural_scenarios);
+    assert.equal(persisted.design.rules.projection, 'open');
+    assert.equal(persisted.design.rules.roof, 'terrace');
+    assert.equal(persisted.design.rules.mezzanine, false);
+    assert.equal(persisted.design.rules.sideProjection, false);
+    assert.equal(persisted.design.rules.sideGarden, false);
+    assert.equal(persisted.design.units['ground:0'].isContractorShare, false);
+    assert.equal(persisted.design.units['ground:1'].isContractorShare, true);
+    assert.equal(saved.cost_mode, 'quick');
+    assert.equal(JSON.parse(saved.daire_metraj_detaylari).toplam_genel_brut, 200);
+    [status] = await call(`/${id}/scenario`, 'PUT', { ...scenario, design: { ...ruleDesign, units: { 'ground:0': { isContractorShare: 'false' } } } });
+    assert.equal(status, 400);
+    [status, saved] = await call(`/${id}/scenario`, 'PUT', scenario);
+    assert.equal(status, 200);
+    assert.deepEqual(JSON.parse(saved.architectural_scenarios), persisted);
+    [status, saved] = await call(`/${id}/cost`, 'PUT', { mode: 'detailed', quick, detailed: rows });
+    assert.equal(status, 200);
+    assert.deepEqual(JSON.parse(saved.architectural_scenarios), persisted);
+    [status, existing] = await call();
+    assert.equal(status, 200);
+    assert.deepEqual(JSON.parse(existing.find(row => row.id === id).architectural_scenarios), persisted);
     [status] = await call('', 'POST', { bina_sayisi: 1, binalar_detay: [{ ...building, daire_sayisi: 3 }] }); assert.equal(status, 400);
     [status] = await call(`/${id}`, 'DELETE'); assert.equal(status, 204);
-    console.log('Simülasyon, geçiş, metraj, bina dağılımı, maliyet ve proje CRUD kontrolleri başarılı.');
+    console.log('Simülasyon, imar kuralları, pay dağılımı, eski senaryo geçişi, metraj, maliyet ve proje CRUD kontrolleri başarılı.');
   } finally { server.kill('SIGTERM'); }
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

@@ -2,6 +2,15 @@
 
 Bu dosyada çalıştırılan kontroller ve sonuçları tutulur.
 
+## Mimari Simülatör kural motoru ve teknik not paftası
+
+- Kural motoru testlerinde konutlu senaryoda 6 ve 7 normal kat sınırı, kapalı ve karma çıkmanın kilidi, açık çıkmaya geçiş, konut altı ticarette asma kat ve bodrum konutu kilidi doğrulandı. Bitişik nizamda yan bahçe ve çıkma, portik koşulu ve taşkında kret +1,50 m sınırı da sınandı.
+- Metraj testlerinde emsal havuzu, blok ölçülerinden kat alanı ve sığınak metrajının daire genel brütüne dağıtılması doğrulandı. Kat toplu seçimi, taralı kattan bir daireyi çıkarma ve farklı katta tek dükkanı tarama, adet ve brüt alan paylarına yansıdı.
+- Eski SQLite şeması ve eski senaryo JSON’u geçici veritabanında yüklendi. Yeni alanlar ve tekil `true`/`false` tarama tercihleri kaydedildi. Proje ve maliyet güncellemeleri senaryo kaydını korudu.
+- Chrome’da proje oluşturma, düzenleme ve silme, aktif proje seçimi, Binaları Düzenle ve Daire m² Düzenle modalları, Hızlı Fizibilite ve Detaylı Keşif tekrar çalıştırıldı. Maliyetler senaryo kaydedilmeden çalıştı. Simülatörün kilitleri, tekil tarama, kesit geometrisi ve sayfa yenileme sonrası kayıt kontrol edildi.
+- Chrome ile PDF üretildi. Notlar açıkken yatay A4’te iki sayfa, kapalıyken bir sayfa doğrulandı. 18 normal katlı örnekte ilk pafta tek sayfaya sığdı. Poppler ile kurumsal antet, Türkiye saatiyle hesaplanan tarih, logo, taramalar, metraj tablosu ve ayrı teknik not paftası görsel olarak incelendi.
+- Üretim derlemesi, `npm test` ve `tests/browser-regression.cjs` macOS’ta izole proje kopyasında çalıştırıldı. İlk boş veritabanı ile paralel derleme bir kez `SQLITE_BUSY` verdi. Geçici dosya WAL kipinde açıldıktan sonra derleme geçti. Windows üzerinde ayrıca çalıştırılmadı.
+
 - Aşama 1: `npm run build` başarılı; TypeScript kontrolü ve üretim derlemesi tamamlandı.
 - Aşama 1: `better-sqlite3` bellek içi veritabanında basit sorgu başarılı.
 - `npm install` iki bağımlılık güvenlik uyarısı bildirdi (bir orta, bir yüksek); incelenmesi gerekiyor.

@@ -1,4 +1,5 @@
 import type { Project } from './projects';
+import { locksFor, normalizeRuleSettings, validateRuleSettings, type RuleSettings } from './imarRules.ts';
 import { validateScenario, type Scenario } from './scenario.ts';
 
 export const MAX_SECTION_FLOORS = 100;
@@ -7,8 +8,9 @@ export const MAX_SECTION_HEADING_LENGTH = 30;
 export const MAX_SECTION_TITLE_LENGTH = 60;
 export const MAX_SECTION_AREA = 1_000_000_000;
 
-export type UnitType = 'apartment' | 'shop' | 'duplex';
-export type UnitOverride = { title?: string; type?: UnitType; gross?: number; totalGross?: number };
+export const UNIT_TYPES = ['apartment', 'shop', 'duplex', 'storage', 'parking'] as const;
+export type UnitType = typeof UNIT_TYPES[number];
+export type UnitOverride = { title?: string; type?: UnitType; gross?: number; totalGross?: number; isContractorShare?: boolean };
 export type BuildingDesign = {
   normalFloors: number;
   ground: boolean;
@@ -21,21 +23,48 @@ export type BuildingDesign = {
   contractorFloors: string[];
   floorAreas: Record<string, number>;
   units: Record<string, UnitOverride>;
+  rules?: RuleSettings;
 };
 export type SimulatorScenario = Scenario & { design?: BuildingDesign };
 
-export type SectionUnit = { id: string; title: string; type: UnitType; gross: number | null; totalGross: number | null; roofArrow: boolean };
+export type SectionUnit = {
+  id: string;
+  title: string;
+  type: UnitType;
+  allowedTypes: UnitType[];
+  gross: number | null;
+  totalGross: number | null;
+  roofArrow: boolean;
+  isContractorShare: boolean;
+};
 export type SectionFloor = {
   id: string;
   label: string;
   kind: 'roof' | 'normal' | 'ground' | 'basement';
   service: boolean;
+  serviceLabel?: string;
   inset: boolean;
   contractor: boolean;
   area: number | null;
   units: SectionUnit[];
 };
-export type Section = { floors: SectionFloor[]; totalArea: number | null; totalUnits: number; totalFloors: number };
+export type Section = {
+  floors: SectionFloor[];
+  totalArea: number | null;
+  totalUnits: number;
+  totalFloors: number;
+  projection: RuleSettings['projection'];
+  roof: RuleSettings['roof'] | null;
+};
+
+const unitLabels: Record<UnitType, string> = {
+  apartment: 'DAİRE', shop: 'DÜKKAN', duplex: 'DAİRE', storage: 'DEPO', parking: 'OTOPARK',
+};
+const roofLabels: Record<NonNullable<Section['roof']>, string> = {
+  void: 'ÇATI BOŞLUĞU', duplex: 'ÇATI ARASI PİYESİ', mansard: 'MANSARD ÇATI', terrace: 'TERAS ÇATI',
+};
+const isResidence = (type: UnitType) => type === 'apartment' || type === 'duplex';
+export const isShareableUnit = (type: UnitType) => isResidence(type) || type === 'shop';
 
 export function emptyDesign(): BuildingDesign {
   return {
@@ -107,19 +136,21 @@ export function validateDesign(value: unknown): BuildingDesign {
     const override: UnitOverride = {};
     if (unit.title !== undefined) override.title = labelText(unit.title, MAX_SECTION_TITLE_LENGTH);
     if (unit.type !== undefined) {
-      if (unit.type !== 'apartment' && unit.type !== 'shop' && unit.type !== 'duplex') throw new Error('Bağımsız bölüm tipi geçersiz.');
-      override.type = unit.type;
+      if (!UNIT_TYPES.some(type => type === unit.type)) throw new Error('Bağımsız bölüm tipi geçersiz.');
+      override.type = unit.type as UnitType;
     }
     if (unit.gross !== undefined) override.gross = areaValue(unit.gross);
     if (unit.totalGross !== undefined) override.totalGross = areaValue(unit.totalGross);
     if (override.gross !== undefined && override.totalGross !== undefined && override.gross > override.totalGross) {
       throw new Error('Bağımsız bölümün genel brüt alanı brüt alanından küçük olamaz.');
     }
+    if (unit.isContractorShare !== undefined) override.isContractorShare = flag(unit.isContractorShare);
     if (Object.keys(override).length) units[key] = override;
   }
   return {
     normalFloors, ground: flag(data.ground), basementFloors, serviceBasement: flag(data.serviceBasement),
     ...(data.serviceTitle === undefined ? {} : { serviceTitle: labelText(data.serviceTitle, MAX_SECTION_TITLE_LENGTH) }),
+    ...(data.rules === undefined ? {} : { rules: validateRuleSettings(data.rules) }),
     columns, headings, duplex: flag(data.duplex), contractorFloors, floorAreas, units,
   };
 }
@@ -138,53 +169,80 @@ function areaProduct(a: unknown, b: unknown): number | null {
 
 export function deriveSection(project: Project, scenario: Scenario, design: BuildingDesign): Section {
   const { normalFloors, ground, basementFloors, serviceBasement, columns, duplex } = design;
+  const rules = design.rules ? normalizeRuleSettings(project, design, design.rules, scenario) : null;
+  const locks = rules ? locksFor(project, design, rules, scenario) : null;
+  const projection: Section['projection'] = rules?.projection ?? (scenario.projection ? scenario.projectionType || 'open' : 'none');
+  const roof = rules && (ground || normalFloors > 0) ? rules.roof : duplex && normalFloors > 0 ? 'duplex' : null;
   const floorCount = normalFloors + Number(ground) + basementFloors;
-  const roofExists = duplex && normalFloors > 0;
-  const availableUnits = floorCount - Number(serviceBasement && basementFloors > 0);
-  const footprint = areaProduct(project.arsa_alani, project.taks);
+  const plotFootprint = areaProduct(project.arsa_alani, project.taks);
+  const blockFootprint = rules?.regime === 'block' ? areaProduct(rules.blockWidth, rules.blockDepth) : null;
+  const footprint = blockFootprint ?? plotFootprint;
   const emsal = areaProduct(project.arsa_alani, project.kaks);
   const defaultArea = footprint ?? (emsal === null || floorCount === 0 ? null : emsal / floorCount);
-  const serviceArea = serviceBasement && basementFloors > 0 ? design.floorAreas[`basement-${basementFloors}`] ?? defaultArea : 0;
+  const basementParkingBlocked = locks?.basementParking.disabled ?? false;
+  const serviceArea = serviceBasement && basementFloors > 0 && !basementParkingBlocked ? design.floorAreas[`basement-${basementFloors}`] ?? defaultArea : 0;
+  const commercial = rules?.use === 'commercial';
+  const explicitGroundShop = ground && Array.from({ length: columns }, (_, column) => design.units[`ground:${column}`]?.type === 'shop').some(Boolean);
+  const commercialGround = commercial || rules?.use === 'ground-commercial' || (rules?.use === 'mixed' && rules.noGroundResidence);
+  const groundLobby = rules?.noGroundResidence && !commercialGround && !explicitGroundShop;
   const selected = new Set(design.contractorFloors);
   const floors: SectionFloor[] = [];
 
-  function addFloor(id: string, label: string, kind: SectionFloor['kind'], order: number, service = false, inset = false) {
+  function addFloor(id: string, label: string, kind: SectionFloor['kind'], order: number, service = false, inset = false, serviceLabel?: string) {
     const floorOverride = design.floorAreas[id];
     const estimatedArea = floorOverride ?? (kind === 'roof' ? 0 : defaultArea);
     const unitArea = estimatedArea === null ? null : estimatedArea / columns;
     const units: SectionUnit[] = [];
+    const contractor = !service && kind !== 'roof' && selected.has(id);
     if (kind !== 'roof' && !service) {
+      const isBasement = kind === 'basement';
+      const basementResidenceLocked = id === 'basement-1' ? locks?.basement1Residence.disabled : locks?.basement2Residence.disabled;
+      const residenceBlocked = (kind === 'ground' && locks?.groundResidence.disabled)
+        || (kind === 'normal' && locks?.commercialUpperResidence.disabled)
+        || (isBasement && (locks?.basementHabitation.disabled || basementResidenceLocked));
+      const allowedTypes = UNIT_TYPES.filter(type => {
+        if (isResidence(type)) return !residenceBlocked;
+        if (type === 'shop') return !(isBasement && locks?.basementHabitation.disabled);
+        return !(type === 'parking' && isBasement && basementParkingBlocked);
+      });
+      const connectToRoof = roof === 'duplex' && (id === `normal-${normalFloors}` || (normalFloors === 0 && id === 'ground'));
+      const defaultType: UnitType = allowedTypes.includes('apartment')
+        ? connectToRoof ? 'duplex' : 'apartment'
+        : !isBasement && allowedTypes.includes('shop') ? 'shop' : 'storage';
       for (let column = 0; column < columns; column++) {
         const unitId = `${id}:${column}`;
         const override = design.units[unitId];
-        const type = override?.type ?? (roofExists && id === `normal-${normalFloors}` ? 'duplex' : 'apartment');
+        const overriddenTypeAllowed = override?.type === undefined || allowedTypes.includes(override.type);
+        const type = overriddenTypeAllowed ? override?.type ?? defaultType : defaultType;
         const number = order * columns + column + 1;
-        const defaultTitle = `${number} NOLU ${type === 'shop' ? 'DÜKKAN' : 'DAİRE'}`;
-        const title = override?.title || defaultTitle;
+        const title = (overriddenTypeAllowed ? override?.title : undefined) || `${number} NOLU ${unitLabels[type]}`;
         const gross = override?.gross ?? unitArea;
-        units.push({ id: unitId, title, type, gross, totalGross: null, roofArrow: roofExists && id === `normal-${normalFloors}` && type === 'duplex' });
+        units.push({ id: unitId, title, type, allowedTypes, gross, totalGross: null, roofArrow: connectToRoof && type === 'duplex', isContractorShare: isShareableUnit(type) && (override?.isContractorShare ?? contractor) });
       }
     }
     const derivedArea = units.length === 0 ? estimatedArea : units.every(unit => unit.gross !== null)
       ? units.reduce((sum, unit) => sum + unit.gross!, 0) : null;
-    floors.push({ id, label, kind, service, inset: inset && !service, contractor: !service && kind !== 'roof' && selected.has(id), area: floorOverride ?? derivedArea, units });
+    floors.push({ id, label, kind, service, serviceLabel, inset: inset && (!service || kind === 'ground'), contractor, area: floorOverride ?? derivedArea, units });
   }
 
-  if (roofExists) addFloor('roof', 'ÇATI ARASI PİYESİ', 'roof', 0);
+  if (roof) addFloor('roof', roofLabels[roof], 'roof', 0);
   const residentialBasementCount = basementFloors - Number(serviceBasement && basementFloors > 0);
+  const inset = projection !== 'none';
   for (let floor = normalFloors; floor > 0; floor--) {
     addFloor(`normal-${floor}`, `${floor}. NORMAL KAT`, 'normal', residentialBasementCount + Number(ground) + floor - 1);
   }
-  if (ground) addFloor('ground', 'ZEMİN KAT', 'ground', residentialBasementCount, false, scenario.projection);
+  if (ground) addFloor('ground', 'ZEMİN KAT', 'ground', residentialBasementCount, !!groundLobby, inset, groundLobby ? 'GİRİŞ HOLÜ / ORTAK ALAN' : undefined);
   for (let floor = 1; floor <= basementFloors; floor++) {
     const service = serviceBasement && floor === basementFloors;
-    addFloor(`basement-${floor}`, `${floor}. BODRUM KAT`, 'basement', residentialBasementCount - floor, service, scenario.projection && floor === 1);
+    addFloor(`basement-${floor}`, `${floor}. BODRUM KAT`, 'basement', residentialBasementCount - floor, service, inset && floor === 1, service && basementParkingBlocked ? 'SIĞINAK / TEKNİK ALAN' : undefined);
   }
-  const apartments = floors.flatMap(floor => floor.units).filter(unit => unit.type !== 'shop');
+  const allUnits = floors.flatMap(floor => floor.units);
+  const apartments = allUnits.filter(unit => isResidence(unit.type));
   const sharedArea = apartments.length > 0 && serviceArea !== null ? serviceArea / apartments.length : null;
-  for (const unit of floors.flatMap(floor => floor.units)) {
-    unit.totalGross = unit.gross === null ? null : unit.type === 'shop' ? unit.gross : sharedArea === null ? null : unit.gross + sharedArea;
+  for (const unit of allUnits) {
+    unit.totalGross = unit.gross === null ? null : !isResidence(unit.type) ? unit.gross : sharedArea === null ? null : unit.gross + sharedArea;
   }
   const totalArea = floorCount > 0 && floors.every(floor => floor.area !== null) ? floors.reduce((sum, floor) => sum + floor.area!, 0) : null;
-  return { floors, totalArea, totalUnits: availableUnits * columns, totalFloors: floorCount };
+  const totalUnits = allUnits.filter(unit => isShareableUnit(unit.type)).length;
+  return { floors, totalArea, totalUnits, totalFloors: floorCount, projection, roof };
 }

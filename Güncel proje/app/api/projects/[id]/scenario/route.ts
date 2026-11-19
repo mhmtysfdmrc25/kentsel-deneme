@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import db from '@/lib/db';
+import { normalizeRuleSettings } from '@/lib/imarRules';
+import type { Project } from '@/lib/projects';
 import { validateSimulator } from '@/lib/simulator';
 export const runtime = 'nodejs';
 export async function PUT(request: Request, context: { params: Promise<{ id: string }> }) {
@@ -9,6 +11,12 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
   try { scenario = validateSimulator(await request.json()); }
   catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : 'Geçersiz senaryo.' }, { status: 400 }); }
   try {
+    if (scenario.design?.rules) {
+      const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(Number(id)) as Project | undefined;
+      if (!project) return NextResponse.json({ error: 'Proje bulunamadı.' }, { status: 404 });
+      const rules = normalizeRuleSettings(project, scenario.design, scenario.design.rules, scenario);
+      scenario = { ...scenario, design: { ...scenario.design, rules } };
+    }
     const result = db.prepare(
       `UPDATE projects SET architectural_scenarios = CASE
         WHEN @keepDesign AND json_valid(architectural_scenarios) THEN
