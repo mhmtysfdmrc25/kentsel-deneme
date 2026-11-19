@@ -77,3 +77,4 @@ Bu dosyada çalıştırılan kontroller ve sonuçları tutulur.
 - Otopark/sığınak başlığının değiştirilmesi, senaryoya kaydı ve yeniden yüklenmesi Chrome regresyonuna eklendi; üretim derlemesi ve otomatik testler başarılı.
 - Paftada tek logo ve iletişim bilgileri için üretim derlemesi, regresyonlar ve Chrome PDF kontrolü başarılı. Tek sayfalık çıktı görsel olarak incelendi; uzun örnek iki yatay A4 sayfa olarak üretildi.
 - Paftanın mavi tek satırlı üst bilgileri, logo ve metraj tablosu yerleşimi için derleme, otomatik regresyon ve Chrome PDF kontrolleri başarılı; tek ve iki sayfalık çıktılar görsel olarak incelendi.
+- Üst bilgilerin eşit aralıkları ve yazdırma anında İstanbul saat dilimine göre güncel tarihin alınması Chrome testinde doğrulandı; derleme ve tüm regresyonlar başarılı.

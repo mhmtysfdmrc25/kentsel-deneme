@@ -156,15 +156,24 @@ async function simulator(page, nav, projectId, root) {
   assert.match(await page.locator('.section-print-page .section-contact').innerText(), /www\.asdemyapi\.com/);
   assert.match(await page.locator('.section-print-page .section-contact').innerText(), /\+90 \(532\) 664 47 25/);
   const headerLayout = await page.locator('.section-print-page .section-sheet-heading').evaluate(header => {
-    const children = [...header.children];
-    const contact = header.querySelector('.section-contact');
-    return { tops: children.map(child => child.getBoundingClientRect().top), contactTops: [...contact.children].map(child => child.getBoundingClientRect().top), color: getComputedStyle(header).color, line: getComputedStyle(header).borderBottomColor, overflow: header.scrollWidth > header.clientWidth };
+    const items = [...header.querySelectorAll('h3, p')].map(item => item.getBoundingClientRect());
+    return { tops: items.map(item => item.top), gaps: items.slice(1).map((item, i) => item.left - items[i].right), color: getComputedStyle(header).color, line: getComputedStyle(header).borderBottomColor, overflow: header.scrollWidth > header.clientWidth };
   });
   assert.equal(headerLayout.color, 'rgb(34, 63, 142)');
   assert.equal(headerLayout.line, 'rgb(34, 63, 142)');
   assert.equal(headerLayout.overflow, false);
   assert.ok(Math.max(...headerLayout.tops) - Math.min(...headerLayout.tops) < 5);
-  assert.ok(Math.abs(headerLayout.contactTops[0] - headerLayout.contactTops[1]) < 1);
+  assert.ok(Math.max(...headerLayout.gaps) - Math.min(...headerLayout.gaps) < 1);
+  assert.equal(await page.locator('.section-print-page .section-sheet-heading > div:first-child p').evaluate(item => item.scrollWidth <= item.clientWidth), true);
+  await page.evaluate(() => {
+    window.__realDate = Date;
+    window.Date = class extends Date {
+      constructor(...args) { super(...(args.length ? args : ['2031-03-04T22:30:00Z'])); }
+    };
+    window.dispatchEvent(new Event('beforeprint'));
+  });
+  assert.equal(await page.locator('.section-print-page .section-print-date').innerText(), '05.03.2031');
+  await page.evaluate(() => { window.Date = window.__realDate; window.dispatchEvent(new Event('beforeprint')); });
   await page.pdf({ ...pdfOptions, path: path.join(root, 'kesit.pdf') });
   await page.emulateMedia({ media: 'screen' });
   await page.screenshot({ path: path.join(root, 'simulator.png'), fullPage: true });

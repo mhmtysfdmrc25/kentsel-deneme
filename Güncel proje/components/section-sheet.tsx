@@ -1,6 +1,7 @@
 'use client';
 
-import { useId, type KeyboardEvent } from 'react';
+import { useEffect, useId, useState, type KeyboardEvent } from 'react';
+import { flushSync } from 'react-dom';
 import type { Project } from '@/lib/projects';
 import { defaultHeading, type BuildingDesign, type Section, type SectionFloor, type SectionUnit } from '@/lib/simulator';
 
@@ -138,7 +139,7 @@ function Legend() {
 
 function SheetBody({ project, design, section, floors, onUnit, onFloor, page }: Omit<SheetProps, 'print'> & {
   floors: SectionFloor[];
-  page?: { index: number; count: number };
+  page?: { index: number; count: number; date: string };
 }) {
   const place = [project.semt, project.mahalle].filter(Boolean).join(' / ');
   const parcel = [project.ada != null && project.ada !== '' ? `${project.ada} Ada` : '', project.parsel != null && project.parsel !== '' ? `${project.parsel} Parsel` : ''].filter(Boolean).join(' · ');
@@ -146,7 +147,7 @@ function SheetBody({ project, design, section, floors, onUnit, onFloor, page }: 
     <div className="section-sheet-heading">
       <div><h3>Şematik Bina Kesiti</h3><p>{[place, parcel].filter(Boolean).join(' · ') || 'Ada / parsel bilgisi girilmedi'}</p></div>
       {page && <div className="section-contact"><p>www.asdemyapi.com</p><p>+90 (532) 664 47 25</p></div>}
-      {page && <p>{new Intl.DateTimeFormat('tr-TR', { timeZone: 'Europe/Istanbul', day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date())}</p>}
+      {page && <p className="section-print-date">{page.date}</p>}
       <p>{page && page.count > 1 ? `Pafta ${page.index + 1} / ${page.count}` : 'Şematik · Ölçeksiz'}</p>
     </div>
     {floors.length ? <div className="section-sheet-content">
@@ -161,12 +162,23 @@ function SheetBody({ project, design, section, floors, onUnit, onFloor, page }: 
 }
 
 export function SectionSheet({ project, design, section, onUnit, onFloor, print = false }: SheetProps) {
+  const [printDate, setPrintDate] = useState('');
+  useEffect(() => {
+    if (!print) return;
+    const updateDate = () => {
+      const date = new Intl.DateTimeFormat('tr-TR', { timeZone: 'Europe/Istanbul', day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date());
+      flushSync(() => setPrintDate(date));
+    };
+    updateDate();
+    window.addEventListener('beforeprint', updateDate);
+    return () => window.removeEventListener('beforeprint', updateDate);
+  }, [print]);
   if (!print) return <SheetBody project={project} design={design} section={section} floors={section.floors} onUnit={onUnit} onFloor={onFloor} />;
 
   const count = Math.max(1, Math.ceil(section.floors.length / rowsPerPage));
   return <div className="section-print-layout" aria-hidden="true">
     {Array.from({ length: count }, (_, index) => (
-      <SheetBody key={index} project={project} design={design} section={section} floors={section.floors.slice(index * rowsPerPage, (index + 1) * rowsPerPage)} page={{ index, count }} />
+      <SheetBody key={index} project={project} design={design} section={section} floors={section.floors.slice(index * rowsPerPage, (index + 1) * rowsPerPage)} page={{ index, count, date: printDate }} />
     ))}
   </div>;
 }
