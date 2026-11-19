@@ -8,8 +8,60 @@ const net = require('node:net');
 const Database = require('better-sqlite3');
 const { simulate, emptyScenario, validateScenario } = require('../lib/scenario.ts');
 const { quickTotal, detailedTotal } = require('../lib/costs.ts');
+const { deriveSection, emptyDesign, validateDesign, validateSimulator } = require('../lib/simulator.ts');
+
+function testSection() {
+  const parcel = { arsa_alani: 1000, taks: 0.4, kaks: 2 };
+  const design = {
+    ...emptyDesign(),
+    normalFloors: 2,
+    basementFloors: 2,
+    columns: 3,
+    headings: ['ÖN CEPHE', 'ARKA CEPHE', 'YAN CEPHE'],
+    duplex: true,
+    contractorFloors: ['normal-2', 'basement-1', 'basement-2'],
+    floorAreas: { 'normal-1': 450 },
+    units: { 'ground:0': { title: 'Köşe Dükkan', type: 'shop', gross: 125, totalGross: 160 } },
+  };
+  const scenario = { ...emptyScenario(), projection: true };
+  const section = deriveSection(parcel, scenario, validateDesign(design));
+  const [roof, top, lower, ground, basement, service] = section.floors;
+  assert.deepEqual(section.floors.map(floor => floor.id), ['roof', 'normal-2', 'normal-1', 'ground', 'basement-1', 'basement-2']);
+  assert.equal(section.totalFloors, 5);
+  assert.equal(section.totalUnits, 12);
+  assert.equal(roof.area, 0);
+  assert.equal(roof.units.length, 0);
+  assert.equal(top.contractor, true);
+  assert.ok(top.units.every(unit => unit.type === 'duplex' && unit.roofArrow));
+  assert.equal(lower.area, 450);
+  assert.deepEqual(lower.units.map(unit => unit.gross), [150, 150, 150]);
+  assert.equal(ground.inset, true);
+  assert.equal(basement.inset, true);
+  assert.equal(basement.contractor, true);
+  assert.deepEqual(ground.units[0], { id: 'ground:0', title: 'Köşe Dükkan', type: 'shop', gross: 125, totalGross: 160, roofArrow: false });
+  assert.equal(service.service, true);
+  assert.equal(service.inset, false);
+  assert.equal(service.contractor, false);
+  assert.equal(service.units.length, 0);
+  assert.ok(Math.abs(section.totalArea - (400 * 3 + 450 + 125 + 2 * (400 / 3))) < 1e-9);
+  const noProjection = deriveSection(parcel, emptyScenario(), design);
+  assert.ok(noProjection.floors.every(floor => !floor.inset));
+  const noGround = deriveSection(parcel, scenario, { ...design, ground: false, basementFloors: 1, duplex: false });
+  assert.deepEqual(noGround.floors.map(floor => floor.id), ['normal-2', 'normal-1', 'basement-1']);
+  assert.equal(noGround.totalUnits, 6);
+  const noGroundWithApartmentBasement = deriveSection(parcel, scenario, { ...design, ground: false });
+  assert.equal(noGroundWithApartmentBasement.floors.find(floor => floor.id === 'basement-1').inset, true);
+  assert.ok(Math.abs(deriveSection({ ...parcel, taks: null }, scenario, emptyDesign()).totalArea - 2000) < 1e-9);
+  assert.equal(deriveSection({ ...parcel, taks: null, kaks: null }, scenario, emptyDesign()).totalArea, null);
+  assert.throws(() => validateDesign({ ...design, columns: 7 }), /Sütun sayısı/);
+  assert.throws(() => validateDesign({ ...design, floorAreas: { ground: -5 } }), /Kesit alanı/);
+  assert.throws(() => validateDesign({ ...design, units: { 'invalid:0': { title: 'Daire' } } }), /kimliği/);
+  assert.throws(() => validateDesign({ ...design, units: { 'normal-1:0': { gross: 81, totalGross: 80 } } }), /brüt/i);
+  assert.deepEqual(validateSimulator(scenario), scenario);
+}
 
 async function main() {
+  testSection();
   const input = { arsa_alani: 1000, taks: 0.4, kaks: 2, daire_sayisi: 31, dukkan_sayisi: 1, insaat_alani: 1600, binalar_detay: JSON.stringify([{ daire_sayisi: 31, dukkan_sayisi: 1, normal_kat: 8, bodrum_kat: 1, giriste_daire_yok: false }]) };
   const test = simulate(input, { ...emptyScenario(), bonus: true, slope: true, exposedFloors: 2, narrow: true, heightLimit: true });
   assert.equal(test.kaksArea, 2000); assert.equal(test.gross, 2600); assert.equal(test.slopeArea, 800);
@@ -56,6 +108,34 @@ async function main() {
     let saved; [status, saved] = await call(`/${id}/scenario`, 'PUT', scenario); assert.equal(status, 200); assert.deepEqual(JSON.parse(saved.architectural_scenarios), scenario);
     [status] = await call(`/${id}/scenario`, 'PUT', { ...scenario, exposedFloors: -1 }); assert.equal(status, 400);
     [status, saved] = await call(`/${id}`, 'PUT', { ...project, semt: 'Güncel' }); assert.equal(status, 200); assert.equal(saved.cost_mode, 'detailed'); assert.deepEqual(JSON.parse(saved.architectural_scenarios), scenario);
+    const sectionScenario = {
+      ...scenario,
+      design: {
+        ...emptyDesign(),
+        headings: ['CADDE CEPHESİ', 'AVLU CEPHESİ'],
+        duplex: true,
+        contractorFloors: ['normal-6', 'ground'],
+        floorAreas: { ground: 350 },
+        units: { 'normal-6:0': { title: 'Köşe Daire', type: 'duplex', gross: 180, totalGross: 230 } },
+      },
+    };
+    [status, saved] = await call(`/${id}/scenario`, 'PUT', sectionScenario);
+    assert.equal(status, 200);
+    assert.deepEqual(JSON.parse(saved.architectural_scenarios), sectionScenario);
+    assert.equal(saved.cost_mode, 'detailed');
+    assert.equal(JSON.parse(saved.daire_metraj_detaylari).toplam_genel_brut, 200);
+    [status] = await call(`/${id}/scenario`, 'PUT', { ...sectionScenario, design: { ...sectionScenario.design, columns: 0 } });
+    assert.equal(status, 400);
+    [status, saved] = await call(`/${id}/scenario`, 'PUT', scenario);
+    assert.equal(status, 200);
+    assert.deepEqual(JSON.parse(saved.architectural_scenarios), sectionScenario);
+    [status, saved] = await call(`/${id}/cost`, 'PUT', { mode: 'quick', quick: { ...quick, parkingArea: 50 }, detailed: rows });
+    assert.equal(status, 200);
+    assert.deepEqual(JSON.parse(saved.architectural_scenarios), sectionScenario);
+    [status, saved] = await call(`/${id}`, 'PUT', { ...project, semt: 'Yeni Ad' });
+    assert.equal(status, 200);
+    assert.equal(saved.cost_mode, 'quick');
+    assert.deepEqual(JSON.parse(saved.architectural_scenarios), sectionScenario);
     [status] = await call('', 'POST', { bina_sayisi: 1, binalar_detay: [{ ...building, daire_sayisi: 3 }] }); assert.equal(status, 400);
     [status] = await call(`/${id}`, 'DELETE'); assert.equal(status, 204);
     console.log('Simülasyon, geçiş, metraj, bina dağılımı, maliyet ve proje CRUD kontrolleri başarılı.');

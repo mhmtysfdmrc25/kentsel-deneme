@@ -1,64 +1,260 @@
 'use client';
-import { useState } from 'react';
-import { useProjects } from '@/components/project-context';
-import type { Project } from '@/lib/projects';
-import { emptyScenario, simulate, validateScenario, type Scenario } from '@/lib/scenario';
 
-const format = (n: number | null) => n !== null && Number.isFinite(n) ? `${new Intl.NumberFormat('tr-TR', { maximumFractionDigits: 2 }).format(n)} m²` : 'Bilgi eksik';
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { useProjects } from '@/components/project-context';
+import { SectionSheet } from '@/components/section-sheet';
+import { emptyScenario, type Scenario } from '@/lib/scenario';
+import {
+  defaultHeading, deriveSection, emptyDesign, MAX_SECTION_AREA, MAX_SECTION_COLUMNS,
+  MAX_SECTION_FLOORS, MAX_SECTION_HEADING_LENGTH, MAX_SECTION_TITLE_LENGTH, validateSimulator,
+  type BuildingDesign, type SectionFloor, type SectionUnit, type SimulatorScenario, type UnitOverride,
+} from '@/lib/simulator';
+import type { Project } from '@/lib/projects';
+
+const inputClass = 'w-full rounded-lg border border-[#cfddd7] bg-white px-3 py-2 text-sm focus:outline-2 focus:outline-[#216a5e]';
+const actionClass = 'rounded-lg bg-[#174b48] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#216a5e] disabled:opacity-50';
+const squareMetres = new Intl.NumberFormat('tr-TR', { maximumFractionDigits: 2 });
+const areaText = (value: number | null) => value === null || !Number.isFinite(value) ? '—' : `${squareMetres.format(value)} m²`;
+
+function Check({ checked, onChange, children }: {
+  checked: boolean;
+  onChange: (value: boolean) => void;
+  children: ReactNode;
+}) {
+  return <label className="flex items-start gap-2.5 py-1 text-sm leading-5">
+    <input type="checkbox" checked={checked} onChange={event => onChange(event.target.checked)} className="mt-0.5 h-4 w-4 shrink-0 accent-[#216a5e]" />
+    <span>{children}</span>
+  </label>;
+}
+
+function Count({ label, value, min = 0, max, optional = false, onChange }: {
+  label: string;
+  value: number | null;
+  min?: number;
+  max: number;
+  optional?: boolean;
+  onChange: (value: number | null) => void;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  return <label className="block text-sm font-medium">
+    {label}
+    <input
+      type="number"
+      min={min}
+      max={max}
+      step="1"
+      value={draft ?? value ?? ''}
+      onChange={event => {
+        const raw = event.currentTarget.value;
+        setDraft(raw);
+        if (raw === '' && optional) onChange(null);
+        if (raw !== '' && event.currentTarget.validity.valid) onChange(Number(raw));
+      }}
+      onBlur={() => setDraft(null)}
+      className={`mt-1.5 ${inputClass}`}
+    />
+  </label>;
+}
+
+type Editing = { floor: SectionFloor; unit?: SectionUnit };
+
+function SectionEditor({ editing, override, floorOverride, onClose, onApply }: {
+  editing: Editing;
+  override?: UnitOverride;
+  floorOverride?: number;
+  onClose: () => void;
+  onApply: (data: { area?: number; title?: string; type?: SectionUnit['type']; gross?: number; totalGross?: number }) => void;
+}) {
+  const { unit, floor } = editing;
+  const dialog = useRef<HTMLDialogElement>(null);
+  const [error, setError] = useState('');
+  useEffect(() => { dialog.current?.showModal(); }, []);
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const readArea = (key: string) => {
+      const value = String(form.get(key) ?? '');
+      return value === '' ? undefined : Number(value);
+    };
+    const area = readArea('area');
+    const gross = readArea('gross');
+    const totalGross = readArea('totalGross');
+    if (gross !== undefined && totalGross !== undefined && gross > totalGross) {
+      setError('Genel brüt alan, brüt alandan küçük olamaz.');
+      return;
+    }
+    onApply(unit ? {
+      title: String(form.get('title') ?? '').trim() || undefined,
+      type: form.get('type') === unit.type ? override?.type : form.get('type') as SectionUnit['type'],
+      gross,
+      totalGross,
+    } : { area });
+  }
+
+  return <dialog ref={dialog} onClose={onClose} className="m-auto w-[min(92vw,28rem)] rounded-2xl border border-[#dbe5e2] bg-white p-6 text-[#142e32] shadow-xl backdrop:bg-black/40" aria-labelledby="section-editor-title">
+    <form onSubmit={submit} className="space-y-4">
+      <div>
+        <h3 id="section-editor-title" className="text-lg font-semibold">{unit ? 'Bağımsız Bölümü Düzenle' : 'Kat Alanını Düzenle'}</h3>
+        <p className="mt-1 text-sm text-[#536c64]">{floor.label}{unit && ` · ${unit.title}`}</p>
+      </div>
+      {unit ? <>
+        <label className="block text-sm font-medium">Başlık<input name="title" maxLength={MAX_SECTION_TITLE_LENGTH} defaultValue={override?.title ?? ''} placeholder={unit.title} className={`mt-1 ${inputClass}`} /></label>
+        <label className="block text-sm font-medium">Tip<select name="type" defaultValue={unit.type} className={`mt-1 ${inputClass}`}>
+          <option value="apartment">DAİRE</option><option value="shop">DÜKKAN</option><option value="duplex">DUBLEKS</option>
+        </select></label>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="block text-sm font-medium">Brüt m²<input name="gross" type="number" min="0" max={MAX_SECTION_AREA} step="any" defaultValue={override?.gross ?? ''} placeholder={areaText(unit.gross)} className={`mt-1 ${inputClass}`} /></label>
+          <label className="block text-sm font-medium">Genel Brüt m²<input name="totalGross" type="number" min="0" max={MAX_SECTION_AREA} step="any" defaultValue={override?.totalGross ?? ''} placeholder={areaText(unit.totalGross)} className={`mt-1 ${inputClass}`} /></label>
+        </div>
+      </> : <label className="block text-sm font-medium">Kat toplam inşaat alanı (m²)<input name="area" type="number" min="0" max={MAX_SECTION_AREA} step="any" defaultValue={floorOverride ?? ''} placeholder={areaText(floor.area)} className={`mt-1 ${inputClass}`} /></label>}
+      <p className="text-xs text-[#536c64]">Alanı boş bırakırsan otomatik değer kullanılır.</p>
+      {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
+      <div className="flex justify-end gap-3">
+        <button type="button" onClick={onClose} className="rounded-lg border border-[#cfddd7] px-4 py-2.5 text-sm">Vazgeç</button>
+        <button type="submit" className={actionClass}>Uygula</button>
+      </div>
+    </form>
+  </dialog>;
+}
+
 export function ScenarioPanel({ project }: { project: Project }) {
   const { refresh } = useProjects();
-  const [scenario, setScenario] = useState<Scenario>(() => { try { return project.architectural_scenarios ? validateScenario(JSON.parse(project.architectural_scenarios)) : emptyScenario(); } catch { return emptyScenario(); } });
+  const [initial] = useState<SimulatorScenario>(() => {
+    try {
+      if (project.architectural_scenarios) return validateSimulator(JSON.parse(project.architectural_scenarios));
+    } catch {
+      return emptyScenario();
+    }
+    return emptyScenario();
+  });
+  const [scenario, setScenario] = useState<Scenario>(initial);
+  const [design, setDesign] = useState<BuildingDesign>(() => initial.design ?? emptyDesign());
+  const [editing, setEditing] = useState<Editing | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
-  const stats = simulate(project, scenario);
-  const update = (patch: Partial<Scenario>) => { setScenario(current => ({ ...current, ...patch })); setMessage(''); setError(''); };
+  const section = deriveSection(project, scenario, design);
+  const base = typeof project.arsa_alani === 'number' && typeof project.taks === 'number' ? project.arsa_alani * project.taks : null;
+  const emsal = typeof project.arsa_alani === 'number' && typeof project.kaks === 'number' ? project.arsa_alani * project.kaks : null;
+  const bonus = emsal === null ? null : emsal * (scenario.bonus ? 1.3 : 1);
+  const slope = base !== null && scenario.slope && scenario.exposedFloors !== null ? base * scenario.exposedFloors : null;
+  const eligibleFloors = section.floors.filter(floor => floor.units.length > 0);
+  const riskChecks = [
+    { active: (section.totalArea !== null && section.totalArea > 1500) || section.totalUnits > 12, label: 'Bodrumda sığınak gerekliliğini kontrol edin.' },
+    { active: section.totalFloors >= 4, label: 'Asansör gerekliliğini kontrol edin.' },
+    { active: section.totalFloors >= 10, label: 'İkinci asansör ve yangın merdiveni gerekliliğini kontrol edin.' },
+    { active: section.totalUnits > 30, label: 'En az bir kapıcı dairesi gerekip gerekmediğini kontrol edin.' },
+  ];
+
+  const clearFeedback = () => { setMessage(''); setError(''); };
+  const updateScenario = (patch: Partial<Scenario>) => { setScenario(current => ({ ...current, ...patch })); clearFeedback(); };
+  const updateDesign = (patch: Partial<BuildingDesign>) => { setDesign(current => ({ ...current, ...patch })); clearFeedback(); };
+
   async function save() {
     if (busy) return;
-    setBusy(true); setError(''); setMessage('');
+    setBusy(true); clearFeedback();
     try {
-      const result = await fetch(`/api/projects/${project.id}/scenario`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(scenario) });
+      const payload = validateSimulator({ ...scenario, design });
+      const result = await fetch(`/api/projects/${project.id}/scenario`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
       const body = await result.json();
       if (!result.ok) throw new Error(body.error || 'Senaryo kaydedilemedi.');
       try { await refresh(); setMessage('Senaryo kaydedildi.'); }
-      catch { setError('Senaryo kaydedildi, ancak proje listesi yenilenemedi.'); }
+      catch { setError('Senaryo kaydedildi. Proje listesi yenilenemedi.'); }
     } catch (e) { setError(e instanceof Error ? e.message : 'Senaryo kaydedilemedi.'); }
     finally { setBusy(false); }
   }
-  const control = (checked: boolean, action: (value: boolean) => void, title: string, description?: string) => <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-[#e1ebe7] p-4"><input type="checkbox" checked={checked} onChange={e => action(e.target.checked)} className="mt-1 h-4 w-4 accent-[#216a5e]" /><span><strong className="block text-sm">{title}</strong>{description && <span className="mt-1 block text-sm leading-5 text-[#788986]">{description}</span>}</span></label>;
-  const alertClass = 'rounded-xl border p-4 text-sm leading-6';
-  return <div className="mt-8 grid items-start gap-6 lg:grid-cols-2">
-    <section className="space-y-4 rounded-2xl border border-[#e2eae8] bg-white p-6 shadow-sm"><div><p className="text-xs font-semibold uppercase tracking-wider text-[#739088]">Senaryo girdileri</p><h2 className="mt-2 text-xl font-semibold">Varsayımları belirleyin</h2><p className="mt-2 text-sm text-[#788986]">Tüm seçimler isteğe bağlıdır.</p></div>
-      {control(scenario.bonus, value => update({ bonus: value }), '%30 emsal harici varsayımı', 'Simülasyonda emsal alanına %30 ekle.')}
-      {control(scenario.slope, value => update({ slope: value }), 'Kot farkı (eğim)', 'Arsada kot farkı var mı?')}
-      {scenario.slope && <label className="block text-sm font-medium">Kaç kat açığa çıkıyor?<input type="number" min="0" max="100" step="1" value={scenario.exposedFloors ?? ''} onChange={e => update({ exposedFloors: e.target.value === '' ? null : Number(e.target.value) })} className="mt-2 block w-full rounded-lg border border-[#dbe5e2] px-3 py-3" /></label>}
-      {control(scenario.projection, value => update({ projection: value }), 'Çıkma durumu', 'Üst katlarda çıkma yapılacak mı?')}
-      {scenario.projection && <label className="block text-sm font-medium">Çıkma türü<select value={scenario.projectionType} onChange={e => update({ projectionType: e.target.value as Scenario['projectionType'] })} className="mt-2 block w-full rounded-lg border border-[#dbe5e2] px-3 py-3"><option value="">Seçiniz</option><option value="open">Açık Çıkma (Balkon)</option><option value="closed">Kapalı Çıkma (Odaya Dahil)</option></select></label>}
-      <fieldset className="space-y-3"><legend className="mb-2 text-sm font-semibold">Fiziki kısıtlar</legend>{control(scenario.narrow, value => update({ narrow: value }), 'Dar Arsa / Çekme Mesafesi Kısıtı')}{control(scenario.heightLimit, value => update({ heightLimit: value }), 'YENÇOK (Maksimum Yükseklik / Kat) Sınırı')}</fieldset>
-      {error && <p role="alert" className="text-sm text-red-700">{error}</p>}{message && <p role="status" className="text-sm text-[#236b53]">{message}</p>}
-      <button type="button" disabled={busy} onClick={save} className="rounded-lg bg-[#174b48] px-5 py-3 text-sm font-semibold text-white disabled:opacity-50">{busy ? 'Kaydediliyor…' : 'Senaryoyu Kaydet'}</button>
+
+  return <div className="mt-8 grid items-start gap-6 xl:grid-cols-[minmax(290px,1fr)_minmax(0,2.25fr)]">
+    <section className="space-y-6 rounded-2xl border border-[#dfe9e4] bg-white p-5 shadow-sm" aria-label="Senaryo ve Yeni Bina Ayarları">
+      <fieldset disabled={busy} className="space-y-3">
+        <legend className="mb-3 text-lg font-semibold">Yeni Bina Ayarları</legend>
+        <div className="grid grid-cols-2 gap-3">
+          <Count label="Normal Kat Sayısı" value={design.normalFloors} max={MAX_SECTION_FLOORS} onChange={value => updateDesign({ normalFloors: value ?? 0 })} />
+          <Count label="Bodrum Kat Sayısı" value={design.basementFloors} max={MAX_SECTION_FLOORS} onChange={value => updateDesign({ basementFloors: value ?? 0 })} />
+        </div>
+        <Check checked={design.ground} onChange={ground => updateDesign({ ground })}>Zemin Kat Var mı?</Check>
+        <Check checked={design.serviceBasement} onChange={serviceBasement => updateDesign({ serviceBasement })}>En Alt Bodrum Tek Parça Otopark/Sığınak Olsun</Check>
+        <Count label="Kattaki Sütun (Daire) Sayısı" value={design.columns} min={1} max={MAX_SECTION_COLUMNS} onChange={value => updateDesign({ columns: value ?? 1 })} />
+        <div className="grid grid-cols-2 gap-2">
+          {Array.from({ length: design.columns }, (_, index) => <label key={index} className="text-xs text-[#536c64]">
+            {index + 1}. Cephe Başlığı
+            <input type="text" maxLength={MAX_SECTION_HEADING_LENGTH} value={design.headings[index] ?? ''} placeholder={defaultHeading(index)} onChange={event => {
+              const headings = Array.from({ length: Math.max(design.headings.length, design.columns) }, (_, i) => i === index ? event.target.value : design.headings[i] ?? '');
+              updateDesign({ headings });
+            }} className={`mt-1 ${inputClass}`} />
+          </label>)}
+        </div>
+        <Check checked={design.duplex} onChange={duplex => updateDesign({ duplex })}>Son Kat Çatı Arası Piyesli Dubleks Olsun</Check>
+        {design.duplex && <p className="text-xs text-[#536c64]">{design.normalFloors > 0 ? 'Çatı piyesi alanını metraj tablosundan girebilirsiniz.' : 'Çatı piyesi için en az bir normal kat ekleyin.'}</p>}
+        <fieldset className="rounded-xl border border-[#e3ebe7] p-3">
+          <legend className="px-1 text-sm font-semibold">Müteahhite Kalan Katlar</legend>
+          <div className="max-h-44 overflow-y-auto">
+            {eligibleFloors.length ? eligibleFloors.map(floor => <Check key={floor.id} checked={design.contractorFloors.includes(floor.id)} onChange={checked => updateDesign({ contractorFloors: checked ? [...design.contractorFloors, floor.id] : design.contractorFloors.filter(id => id !== floor.id) })}>{floor.label}</Check>) : <p className="text-xs text-[#536c64]">Bağımsız bölümü olan katlar burada görünür.</p>}
+          </div>
+        </fieldset>
+      </fieldset>
+      <fieldset disabled={busy} className="space-y-2 border-t border-[#e3ebe7] pt-2">
+        <legend className="pr-2 text-base font-semibold">İmar Senaryoları ve Kısıtlar</legend>
+        <Check checked={scenario.bonus} onChange={bonus => updateScenario({ bonus })}>%30 Emsal Harici Bonus Kullanılsın mı?</Check>
+        <Check checked={scenario.slope} onChange={slope => updateScenario({ slope })}>Arsada Kot Farkı (Eğim) Var mı?</Check>
+        {scenario.slope && <Count label="Kaç kat açığa çıkıyor?" value={scenario.exposedFloors} max={100} optional onChange={exposedFloors => updateScenario({ exposedFloors })} />}
+        <Check checked={scenario.projection} onChange={projection => updateScenario({ projection })}>Üst Katlarda Çıkma Yapılacak mı?</Check>
+        {scenario.projection && <label className="block text-sm font-medium">Çıkma türü<select value={scenario.projectionType} onChange={event => updateScenario({ projectionType: event.target.value as Scenario['projectionType'] })} className={`mt-1.5 ${inputClass}`}><option value="">Seçiniz</option><option value="open">Açık Çıkma (Balkon)</option><option value="closed">Kapalı Çıkma (Odaya Dahil)</option></select></label>}
+        <Check checked={scenario.narrow} onChange={narrow => updateScenario({ narrow })}>Dar Arsa / Çekme Mesafesi Kısıtı</Check>
+        <Check checked={scenario.heightLimit} onChange={heightLimit => updateScenario({ heightLimit })}>YENÇOK (Maksimum Yükseklik) Sınırı</Check>
+      </fieldset>
+      <button type="button" onClick={save} disabled={busy} className={actionClass}>{busy ? 'Kaydediliyor…' : 'Senaryoyu Kaydet'}</button>
+      {message && <p role="status" className="text-sm text-[#216a5e]">{message}</p>}
+      {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
     </section>
-    <section className="rounded-2xl border border-[#e2eae8] bg-white p-6 shadow-sm"><p className="text-xs font-semibold uppercase tracking-wider text-[#739088]">Canlı simülasyon</p><h2 className="mt-2 text-xl font-semibold">Alanlar ve uyarılar</h2><p className="mt-2 text-sm leading-6 text-[#788986]">Kayıtlı mevcut yapı verileri ve seçilen varsayımlar kullanılır.</p>
-      <div className="mt-6 grid gap-3 sm:grid-cols-2">{[
-        ['Arsa alanı', format(typeof project.arsa_alani === 'number' ? project.arsa_alani : null)],
-        ['TAKS / KAKS', `${project.taks ?? '—'} / ${project.kaks ?? '—'}`],
-        ['Toplam daire / bağımsız bölüm', `${project.daire_sayisi ?? '—'} / ${stats.units ?? '—'}`],
-        ['En yüksek mevcut bina katı', stats.floors === null ? 'Bilgi eksik' : String(stats.floors)],
-        ['Mevcut toplam inşaat alanı', format(typeof project.insaat_alani === 'number' ? project.insaat_alani : null)],
-        ['Teorik emsal alanı (Arsa × KAKS)', format(stats.kaksArea)],
-        ['Varsayımsal brüt alan', format(stats.gross)],
-        ['Kot farkı alan varsayımı', stats.slopeArea === null ? '—' : format(stats.slopeArea)],
-      ].map(([label, value]) => <div key={label} className="rounded-xl bg-[#f3f8f5] p-4"><p className="text-xs leading-5 text-[#70877f]">{label}</p><p className="mt-2 text-lg font-semibold text-[#205b50]">{value}</p></div>)}</div>
-      <p className="mt-4 text-xs leading-5 text-[#788986]">KAKS alanı otomatik olarak satılabilir net alan değildir. %30 ve kot farkı sonuçları varsayımdır; emsal harici kullanım, açıkta kalan katlar ve çıkmalar için plan, ruhsat ve mevzuat koşulları ayrıca değerlendirilmelidir. Kot alanı diğer toplamın üzerine otomatik eklenmez.</p>
-      <h3 className="mt-7 text-lg font-semibold">Mevzuat ve Risk Analizi</h3><div className="mt-4 space-y-3">
-        {scenario.narrow && scenario.heightLimit ? <p className={`${alertClass} border-red-200 bg-red-50 text-red-800`}>⚠️ KRİTİK UYARI: Hem dar arsa hem yükseklik sınırınız var. İmar hakkınızın tamamını kullanamama (kayıp emsal) riski değerlendirilmelidir.</p> : scenario.narrow ? <p className={`${alertClass} border-amber-200 bg-amber-50 text-amber-900`}>Bilgi: Taban oturumunuz daralabilir; emsali doldurmak için kat sayısını artırmanız gerekebilir.</p> : scenario.heightLimit ? <p className={`${alertClass} border-amber-200 bg-amber-50 text-amber-900`}>Bilgi: Kat sınırınız olabilir; emsali doldurmak için taban oturumu ve TAKS birlikte incelenmelidir.</p> : null}
-        {stats.shelter && <p className={`${alertClass} border-amber-200 bg-amber-50 text-amber-900`}>⚠️ Sığınak gerekliliğini kontrol edin. Yapı türü, bağımsız bölüm niteliği ve emsale esas alan sonucu değiştirir; mevcut toplam inşaat alanı emsale esas alanla aynı olmayabilir.</p>}
-        {stats.elevator && <p className={`${alertClass} border-amber-200 bg-amber-50 text-amber-900`}>⚠️ Asansör gerekliliğini ve kat hesabını kontrol edin; bodrum kullanımı ve yürürlükteki hükümler önemlidir.</p>}
-        {stats.highRise && <p className={`${alertClass} border-amber-200 bg-amber-50 text-amber-900`}>⚠️ Asansör sayısı ve yangın kaçış koşullarını kontrol edin; bina yüksekliği, kullanım türü ve bağımsız bölümler sonucu etkiler.</p>}
-        {stats.caretaker && <p className={`${alertClass} border-amber-200 bg-amber-50 text-amber-900`}>⚠️ Kapıcı dairesi gerekliliğini konut sayısı ve ilgili plan hükümleriyle kontrol edin.</p>}
-        {(stats.units === null || stats.floors === null || project.insaat_alani === null) && <p className={`${alertClass} border-[#e1ebe7] bg-[#f7faf8] text-[#647d74]`}>Bazı yapı bilgileri eksik; tüm eşik kontrolleri yapılamadı.</p>}
-        <p className="text-xs leading-5 text-[#788986]">Bu uyarılar ön taramadır; mevcut binanın verileri yeni proje koşullarını doğrulamaz. Projeye uygulanacak güncel hükümleri ve belediye plan notlarını yetkili uzmanla kontrol edin.</p>
+
+    <section className="min-w-0 space-y-5" aria-label="Canlı Uyarılar ve Otomatik Şematik Kesit Paftası">
+      <div className="rounded-2xl border border-[#dfe9e4] bg-white p-5 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold">Canlı Metraj Özeti</h2>
+            <p className="mt-1 text-sm text-[#536c64]">Arsa {areaText(typeof project.arsa_alani === 'number' ? project.arsa_alani : null)} · TAKS {project.taks ?? '—'} · KAKS {project.kaks ?? '—'}</p>
+          </div>
+          <button type="button" disabled={!section.floors.length || Boolean(editing)} onClick={() => window.print()} className={actionClass}>Kesit PDF İndir / Yazdır</button>
+        </div>
+        <dl className="mt-4 grid gap-2 sm:grid-cols-3">
+          {([
+            ['Net Emsal Alanı', emsal],
+            ['Bonuslu Maks. Alan', bonus],
+            ['Kot Farkı Bonusu', slope],
+          ] as const).map(([label, value]) => <div key={label} className="rounded-lg bg-[#eef5f1] px-3 py-2"><dt className="text-xs text-[#536c64]">{label}</dt><dd className="mt-1 text-lg font-semibold text-[#174b48]">{areaText(value)}</dd></div>)}
+        </dl>
+        <p className="mt-3 text-sm text-[#536c64]">Yeni bina · {section.totalFloors} kat · {section.totalUnits} bağımsız bölüm · {areaText(section.totalArea)}</p>
+        {base === null && emsal === null && <p className="mt-2 text-sm text-[#536c64]">Otomatik kat alanları için Proje Yönetimi’nde arsa alanı ve TAKS veya KAKS girin. Kat alanlarını paftadan elle de girebilirsiniz.</p>}
       </div>
+
+      <div className="space-y-2 rounded-2xl border border-[#dfe9e4] bg-white p-5 shadow-sm">
+        <h2 className="text-lg font-semibold">Mevzuat ve Risk Analizi</h2>
+        {scenario.narrow && scenario.heightLimit ? <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-900"><strong>KRİTİK UYARI:</strong> Hem dar arsa hem yükseklik sınırınız var. İmar hakkınızın (KAKS) tamamını kullanamama (Kayıp Emsal) riskiniz çok yüksek!</p>
+          : scenario.narrow ? <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-950">Taban oturumunuz daralabilir, emsali doldurmak için kat sayısını artırmanız gerekebilir.</p>
+          : scenario.heightLimit ? <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-950">Kat sınırınız var, emsali doldurmak için taban oturumunu (TAKS) maksimumda kullanmalısınız.</p> : null}
+        {riskChecks.filter(check => check.active).map(check => <p key={check.label} className="rounded-lg bg-amber-50 p-3 text-sm text-amber-950">{check.label}</p>)}
+        <p className="text-xs leading-5 text-[#536c64]">Uyarılar yeni bina taslağındaki eşiklere bağlı ön kontrollerdir. Ruhsat, emsal dışı alan, kot ve çıkma koşulları için ilgili mevzuat ve belediye plan notları ayrıca değerlendirilir.</p>
+      </div>
+
+      <SectionSheet project={project} design={design} section={section} onUnit={busy ? undefined : (unit, floor) => setEditing({ unit, floor })} onFloor={busy ? undefined : floor => setEditing({ floor })} />
+      <SectionSheet project={project} design={design} section={section} print />
     </section>
+
+    {editing && <SectionEditor editing={editing} override={editing.unit ? design.units[editing.unit.id] : undefined} floorOverride={design.floorAreas[editing.floor.id]} onClose={() => setEditing(null)} onApply={({ area, ...unitData }) => {
+      if (editing.unit) updateDesign({ units: { ...design.units, [editing.unit.id]: unitData } });
+      else {
+        const floorAreas = { ...design.floorAreas };
+        if (area === undefined) delete floorAreas[editing.floor.id];
+        else floorAreas[editing.floor.id] = area;
+        updateDesign({ floorAreas });
+      }
+      setEditing(null);
+    }} />}
   </div>;
 }

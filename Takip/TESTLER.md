@@ -61,3 +61,11 @@ Bu dosyada çalıştırılan kontroller ve sonuçları tutulur.
 - Kısıt kombinasyonları, emsal/kot hesapları ve eşik taramaları birim seviyesinde kontrol edildi.
 - Tarayıcı otomasyonu başlatılamadı; yeni ve mevcut ekranların görsel ve fareyle etkileşim regresyonu doğrulanamadı. Daha önce yalnızca tarayıcı kontrolü bekleyen senaryolar bu nedenle hâlâ açık.
 - Yeniden çalıştırma: proje dizininde önce `npm run build`, sonra `npm test`.
+
+## Mimari Simülatör ve kesit PDF’i
+
+- Üretim derlemesi ve `npm test` başarılı. Otomatik regresyonda eski senaryo JSON’u, yeni ayar/metraj kaydı, geçersiz alanlar, sabit kat ve bölüm kimlikleri, çatı, çıkma, otopark, tarama ve proje/maliyet verisinin korunması sınandı.
+- macOS Chrome’da aktif proje uyarısı, sekme sırası, ayarların paftaya yansıması, kritik kısıt uyarısı, bölüm/kat düzenleme, senaryo kaydetme ve sayfa yenileme kontrol edildi.
+- Aynı tarayıcı akışında proje oluşturma, açma, düzenleme ve silme, Binaları Düzenle ve Daire m² pencereleri ile Hızlı Fizibilite ve Detaylı Keşif doğrulandı. Maliyet işlemleri henüz senaryo kaydedilmemiş projede de tamamlandı.
+- Yazdır düğmesinin tarayıcı yazdırmasını çağırdığı kontrol edildi. Chrome ile PDF üretildi, Poppler ile yatay A4 ölçüsü ve görsel çıktı doğrulandı. Normal pafta tek sayfa, 18 normal katlı örnek iki sayfa çıktı. Başlık, kesit, taramalar, lejant ve metraj tablosu görünür. Menü, ayarlar, uyarılar ve düğmeler PDF dışında kaldı.
+- Tarayıcı kontrolünü tekrarlamak için derlemeden sonra Playwright bulunan bir ortamda `node tests/browser-regression.cjs` çalıştır. `PLAYWRIGHT_MODULE` ve `CHROME_PATH` değişkenleriyle mevcut Playwright kurulumunu ve Chrome yürütülebilir dosyasını gösterebilirsin. Betik geçici bir veritabanı kullanır ve üretilen PDF’lerin konumunu yazar.

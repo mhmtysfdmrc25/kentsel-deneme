@@ -7,3 +7,4 @@
 - Daire metrajı ve proje geneline eşit artan alan dağıtımı eklendi; kullanıcı arayüzü değerlendirmesi bekleniyor.
 - Aşama 3: Hızlı fizibilite ve detaylı keşif motorları, proje bazında kayıt ve aktif maliyet toplamı eklendi; kullanıcı arayüzü değerlendirmesi bekleniyor.
 - Mimari analiz: Opsiyonel senaryolar, kayıt ve canlı ön tarama eklendi; otomatik regresyon başarılı, arayüz değerlendirmesi bekleniyor.
+- Mimari Simülatör: Mevcut senaryo sekmesi yeni bina ayarları, düzenlenebilir kesit paftası ve A4 yatay çıktı ile genişletildi.

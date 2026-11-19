@@ -1,0 +1,181 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const net = require('node:net');
+const { spawn } = require('node:child_process');
+const repo = path.resolve(__dirname, '..');
+
+// Optional browser check: run npm run build and provide Playwright if it is not installed locally.
+// PLAYWRIGHT_MODULE can point to an existing Playwright installation.
+// CHROME_PATH can point to system Chrome. Without it Playwright uses its own Chromium.
+const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
+
+async function main() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kentsel-browser-'));
+  fs.cpSync(path.join(repo, '.next'), path.join(root, '.next'), { recursive: true });
+  fs.copyFileSync(path.join(repo, 'package.json'), path.join(root, 'package.json'));
+  fs.symlinkSync(path.join(repo, 'node_modules'), path.join(root, 'node_modules'), 'junction');
+  const port = await new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => server.close(resolve.bind(null, server.address().port)));
+  });
+  const base = 'http://127.0.0.1:' + port;
+  const server = spawn(process.execPath, [path.join(root, 'node_modules', 'next', 'dist', 'bin', 'next'), 'start', '-H', '127.0.0.1', '-p', String(port)], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
+  let log = '';
+  server.stdout.on('data', data => { log += data; });
+  server.stderr.on('data', data => { log += data; });
+  let browser;
+  try {
+    for (let i = 0; i < 100; i++) {
+      try { if ((await fetch(base + '/api/projects')).ok) break; } catch { /* starting */ }
+      if (server.exitCode !== null || i === 99) throw new Error(log);
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    browser = await chromium.launch({ executablePath: process.env.CHROME_PATH, headless: true });
+    const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+    page.setDefaultTimeout(5000);
+    const pageErrors = [];
+    page.on('pageerror', error => pageErrors.push(error.message));
+    page.on('dialog', dialog => dialog.accept());
+    await page.goto(base);
+    const nav = label => page.getByRole('navigation').getByRole('button', { name: label, exact: true });
+    const projectTab = 'Proje Yönetimi';
+    const costTab = 'Maliyet Analizi';
+    const labels = await page.getByRole('navigation').getByRole('button').allTextContents();
+    assert.deepEqual(labels.slice(0, 3), [projectTab, 'Mimari Simülatör', costTab]);
+    await nav('Mimari Simülatör').click();
+    await page.getByText('Lütfen işlem yapmak için üst menüden bir proje seçin', { exact: false }).waitFor();
+    await nav(projectTab).click();
+    for (const [id, value] of Object.entries({ semt: 'Pafta Testi', mahalle: 'Örnek Mahalle', ada: '12', parsel: '34', kaks: '2', taks: '0.4', arsa_alani: '1000', bina_sayisi: '1', insaat_alani: '250', notlar: 'Yerel tarayıcı regresyonu' })) {
+      await page.locator('#' + id).fill(value);
+    }
+    await page.getByRole('button', { name: 'Binaları Düzenle' }).click();
+    const building = page.getByRole('dialog', { name: 'Bina detayları' });
+    await building.getByLabel('Bina Adı').fill('A Blok');
+    assert.equal(await building.getByLabel('Normal Kat Sayısı').isDisabled(), true);
+    await building.getByLabel('Mevcut Daire Sayısı').fill('2');
+    await building.getByLabel('Mevcut Dükkan Sayısı').fill('0');
+    await building.getByLabel('Normal Kat Sayısı').fill('1');
+    await building.getByLabel('Bodrum Kat Sayısı').fill('0');
+    assert.equal(await building.getByRole('button', { name: 'Kaydet', exact: true }).isDisabled(), true);
+    await building.getByLabel('Zemin Kat', { exact: true }).fill('1');
+    await building.getByLabel('1. Kat', { exact: true }).fill('1');
+    await building.getByRole('button', { name: 'Kaydet', exact: true }).click();
+    await building.waitFor({ state: 'hidden' });
+    await page.getByRole('button', { name: 'Daire m² Düzenle', exact: true }).click();
+    const measure = page.getByRole('dialog', { name: 'Daire m² düzenle' });
+    for (const input of await measure.getByLabel('Kat Ortak Alanı (m²)').all()) await input.fill('10');
+    for (const input of await measure.getByLabel(/Daire Net/).all()) await input.fill('70');
+    for (const input of await measure.getByLabel(/Daire Brüt/).all()) await input.fill('100');
+    assert.deepEqual(await measure.getByLabel(/Genel Brüt/).evaluateAll(inputs => inputs.map(input => input.value)), ['125', '125']);
+    await measure.getByRole('button', { name: 'Kaydet', exact: true }).click();
+    await measure.waitFor({ state: 'hidden' });
+    await page.locator('#project-form').getByRole('button', { name: 'Kaydet', exact: true }).click();
+    await page.getByText('Proje kaydedildi.', { exact: true }).waitFor();
+    await page.getByRole('button', { name: /Pafta Testi.*düzenle/ }).click();
+    assert.equal(await page.locator('#notlar').inputValue(), 'Yerel tarayıcı regresyonu');
+    await page.getByRole('button', { name: 'Daire m² Düzenle', exact: true }).click();
+    assert.equal(await measure.getByLabel(/Daire Net/).first().inputValue(), '70');
+    await measure.getByRole('button', { name: 'Kapat' }).click();
+    await page.locator('#notlar').fill('Kayıt güncellendi');
+    await page.locator('#project-form').getByRole('button', { name: 'Kaydet', exact: true }).click();
+    await page.getByText('Proje kaydedildi.', { exact: true }).waitFor();
+    const projectId = await page.locator('#active-project option').nth(1).getAttribute('value');
+    await page.locator('#active-project').selectOption(projectId);
+    await nav(costTab).click();
+    for (const [label, amount] of [[/Daire.*Üst Yapı/, '200'], [/Toplam Yıkım/, '100'], [/Toplam Kira/, '200'], [/Proje, Harç/, '300']]) await page.getByLabel(label).fill(amount);
+    await page.getByRole('button', { name: 'Maliyetleri Kaydet', exact: true }).click();
+    await page.getByText('Maliyetler kaydedildi.', { exact: true }).waitFor();
+    assert.equal(await page.getByText(/50\.600,00/).count(), 1);
+    await page.getByRole('button', { name: 'Detaylı Keşif', exact: true }).click();
+    await page.getByRole('button', { name: '+ Yeni Kalem Ekle', exact: true }).click();
+    for (const [label, value] of [['1. gider adı', 'Beton'], ['1. miktar', '2'], ['1. birim', 'm³'], ['1. birim fiyat', '500']]) await page.getByLabel(label, { exact: true }).fill(value);
+    await page.getByRole('button', { name: 'Maliyetleri Kaydet', exact: true }).click();
+    await page.getByText('Maliyetler kaydedildi.', { exact: true }).waitFor();
+    assert.equal(await page.getByText(/1\.000,00/).count(), 2);
+    console.log('Tarayıcı: proje oluşturma, bina doğrulaması ve modalı, daire metrajı, düzenleme ve iki maliyet modu geçti.');
+    await simulator(page, nav, projectId, root);
+    await nav(projectTab).click();
+    await page.getByRole('button', { name: /Pafta Testi.*sil/ }).click();
+    await page.getByText('Proje silindi.', { exact: true }).waitFor();
+    assert.equal(await page.locator('#active-project').inputValue(), '');
+    assert.deepEqual(pageErrors, []);
+    console.log('Tarayıcı: silme, aktif proje sıfırlama ve tarayıcı hatası denetimi geçti.');
+    console.log('QA_PATH=' + root);
+  } finally {
+    await browser?.close();
+    server.kill('SIGTERM');
+  }
+}
+
+async function simulator(page, nav, projectId, root) {
+  await nav('Mimari Simülatör').click();
+  await page.getByLabel('Normal Kat Sayısı', { exact: true }).fill('6');
+  await page.getByLabel('Bodrum Kat Sayısı', { exact: true }).fill('2');
+  await page.getByLabel('Kattaki Sütun (Daire) Sayısı', { exact: true }).fill('3');
+  await page.getByLabel(/Son Kat Çatı Arası/).check();
+  await page.getByLabel(/Üst Katlarda Çıkma/).check();
+  await page.getByLabel(/Çıkma türü/i).selectOption('closed');
+  await page.getByLabel(/%30 Emsal Harici/).check();
+  await page.getByLabel(/Arsada Kot Farkı/).check();
+  await page.getByLabel(/Kaç kat açığa çıkıyor/).fill('2');
+  await page.getByLabel(/Dar Arsa/).check();
+  await page.getByLabel(/YENÇOK/).check();
+  await page.getByText(/KRİTİK UYARI/).waitFor();
+  await page.getByLabel('6. NORMAL KAT', { exact: true }).check();
+  await editSheet(page);
+  await page.getByRole('button', { name: 'Senaryoyu Kaydet', exact: true }).click();
+  await page.getByText('Senaryo kaydedildi.', { exact: true }).waitFor();
+  await page.reload();
+  assert.equal(await page.locator('#active-project').inputValue(), projectId);
+  await nav('Mimari Simülatör').click();
+  assert.equal(await page.getByLabel('Kattaki Sütun (Daire) Sayısı', { exact: true }).inputValue(), '3');
+  assert.equal(await page.getByLabel(/Üst Katlarda Çıkma/).isChecked(), true);
+  const drawing = page.locator('.section-sheet:not(.section-print-page)');
+  assert.equal(await drawing.locator('[data-unit="normal-1:0"]').getAttribute('aria-label'), '1. NORMAL KAT, Köşe Dükkan düzenle');
+  assert.equal(await drawing.locator('[data-floor="ground"]').getAttribute('data-inset'), 'true');
+  assert.equal(await drawing.locator('[data-floor="basement-1"]').getAttribute('data-inset'), 'true');
+  assert.equal(await drawing.locator('[data-floor="basement-2"]').getAttribute('data-inset'), 'false');
+  assert.equal(await drawing.locator('[data-floor="normal-6"]').getAttribute('data-contractor'), 'true');
+  assert.equal(await drawing.locator('[data-roof]').count(), 1);
+  assert.equal(await drawing.locator('[data-roof-arrow]').count(), 3);
+  await page.evaluate(() => { window.print = () => { window.__qaPrint = true; }; });
+  await page.getByRole('button', { name: 'Kesit PDF İndir / Yazdır', exact: true }).click();
+  assert.equal(await page.evaluate(() => window.__qaPrint), true);
+  const pdfOptions = { printBackground: true, preferCSSPageSize: true };
+  await page.emulateMedia({ media: 'print' });
+  assert.equal(await page.getByRole('navigation').isVisible(), false);
+  assert.equal(await page.locator('.section-print-page').count(), 1);
+  assert.equal(await page.locator('.section-print-page').isVisible(), true);
+  await page.pdf({ ...pdfOptions, path: path.join(root, 'kesit.pdf') });
+  await page.emulateMedia({ media: 'screen' });
+  await page.screenshot({ path: path.join(root, 'simulator.png'), fullPage: true });
+  await page.getByLabel('Normal Kat Sayısı', { exact: true }).fill('18');
+  await page.emulateMedia({ media: 'print' });
+  assert.equal(await page.locator('.section-print-page').count(), 2);
+  await page.pdf({ ...pdfOptions, path: path.join(root, 'uzun-kesit.pdf') });
+  await page.emulateMedia({ media: 'screen' });
+  console.log('Tarayıcı: simülatör girişleri, düzenleme, kayıt/yenileme ve iki PDF üretimi geçti.');
+}
+
+async function editSheet(page) {
+  const drawing = page.locator('.section-sheet:not(.section-print-page)');
+  await drawing.locator('[data-unit="normal-1:0"]').click();
+  const unit = page.getByRole('dialog', { name: 'Bağımsız Bölümü Düzenle' });
+  await unit.getByLabel('Başlık', { exact: true }).fill('Köşe Dükkan');
+  await unit.locator('select[name="type"]').selectOption('shop');
+  await unit.getByLabel('Brüt m²', { exact: true }).fill('145');
+  await unit.getByLabel('Genel Brüt m²', { exact: true }).fill('180');
+  await unit.getByRole('button', { name: 'Uygula', exact: true }).click();
+  await unit.waitFor({ state: 'hidden' });
+  await drawing.getByRole('button', { name: '1. NORMAL KAT alanını düzenle', exact: true }).click();
+  const floor = page.getByRole('dialog', { name: 'Kat Alanını Düzenle' });
+  await floor.getByRole('spinbutton').fill('450');
+  await floor.getByRole('button', { name: 'Uygula', exact: true }).click();
+  await floor.waitFor({ state: 'hidden' });
+  assert.match(await drawing.locator('.section-area-table').innerText(), /450,00/);
+}
+
+main().catch(error => { console.error(error); process.exitCode = 1; });

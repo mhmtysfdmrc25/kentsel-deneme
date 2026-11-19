@@ -3,7 +3,7 @@
 - **Aşama 1 (Şu an):** Next.js iskelet kurulumu, `better-sqlite3` bağlantısı ve 4 sekmeli ana menü (Dosya Yönetimi, Maliyet Hesabı, Kâr/Zarar, Teklif Çıktısı).
 - **Aşama 2:** Ada/Parsel bazlı proje oluşturma ve veritabanına kaydetme (1. Ekran).
 - **Aşama 3:** TAKS/KAKS formları, bina/daire m² girişleri ve canlı maliyet motoru (2. Ekran).
-- **Ek çalışma:** Opsiyonel mimari analiz ve senaryo panosu; varsayımsal alan hesapları ve mevzuat için ön tarama.
+- **Ek çalışma:** Opsiyonel Mimari Simülatör. Yeni bina senaryoları, düzenlenebilir vektörel kesit, alan özeti, mevzuat ön taraması ve A4 yatay PDF çıktısı.
 - **Aşama 4:** Satış gelirleri, müteahhit/malik payları ve net kâr analizi (3. Ekran).
 - **Aşama 5:** Excel (.xlsx) dışa aktarım modülü ve projeyi Windows için paketleme.
 
