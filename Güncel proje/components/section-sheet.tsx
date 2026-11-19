@@ -83,7 +83,8 @@ function Drawing({ design, floors, onUnit, onFloor }: {
               {floor.service
                 ? <g aria-label={clickable ? `${floor.label} otopark / sığınak alanını düzenle` : undefined} role={clickable ? 'button' : undefined} tabIndex={clickable ? 0 : undefined} onClick={clickable ?? undefined} onKeyDown={clickable ? event => handleKey(event, clickable) : undefined} className={clickable ? 'section-interactive' : undefined}>
                     <rect x={x} y={top} width={rowWidth} height={height} fill="transparent" className="section-hitbox" />
-                    <text x={x + rowWidth / 2} y={y + 4} textAnchor="middle" className="section-unit-title section-ink">OTOPARK / SIĞINAK</text>
+                    <text x={x + rowWidth / 2} y={y - 3} textAnchor="middle" className="section-unit-title section-ink" {...fit(design.serviceTitle?.trim() || 'OTOPARK / SIĞINAK', rowWidth - 16, 6.5)}>{design.serviceTitle?.trim() || 'OTOPARK / SIĞINAK'}</text>
+                    <text x={x + rowWidth / 2} y={y + 12} textAnchor="middle" className="section-unit-value section-ink">BRÜT: {area(floor.area)}</text>
                   </g>
                 : floor.units.map((unit, index) => {
                     const unitX = x + index * unitWidth;
@@ -144,6 +145,8 @@ function SheetBody({ project, design, section, floors, onUnit, onFloor, page }: 
   return <div className={page ? 'section-sheet section-print-page' : 'section-sheet'} data-section-sheet="">
     <div className="section-sheet-heading">
       <div><h3>Şematik Bina Kesiti</h3><p>{[place, parcel].filter(Boolean).join(' · ') || 'Ada / parsel bilgisi girilmedi'}</p></div>
+      {page && <div className="section-contact"><p>www.asdemyapi.com</p><p>+90 (532) 664 47 25</p></div>}
+      {page && <p>{new Intl.DateTimeFormat('tr-TR', { timeZone: 'Europe/Istanbul', day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date())}</p>}
       <p>{page && page.count > 1 ? `Pafta ${page.index + 1} / ${page.count}` : 'Şematik · Ölçeksiz'}</p>
     </div>
     {floors.length ? <div className="section-sheet-content">
@@ -153,6 +156,7 @@ function SheetBody({ project, design, section, floors, onUnit, onFloor, page }: 
       </div>
       <AreaTable floors={floors} total={section.totalArea} onFloor={onFloor} />
     </div> : <p className="section-empty">Kesit oluşturmak için bina ayarlarından bir kat ekleyin.</p>}
+    {page && <div className="section-print-footer"><p>Ön çalışmadır. Kesin metrekare hesapları değildir. Kanıt olarak kullanılamaz.</p><div className="section-company-logo"><img src="/asdem-logo.png" alt="Asdem Yapı Construction" /></div></div>}
   </div>;
 }
 

@@ -69,3 +69,11 @@ Bu dosyada çalıştırılan kontroller ve sonuçları tutulur.
 - Aynı tarayıcı akışında proje oluşturma, açma, düzenleme ve silme, Binaları Düzenle ve Daire m² pencereleri ile Hızlı Fizibilite ve Detaylı Keşif doğrulandı. Maliyet işlemleri henüz senaryo kaydedilmemiş projede de tamamlandı.
 - Yazdır düğmesinin tarayıcı yazdırmasını çağırdığı kontrol edildi. Chrome ile PDF üretildi, Poppler ile yatay A4 ölçüsü ve görsel çıktı doğrulandı. Normal pafta tek sayfa, 18 normal katlı örnek iki sayfa çıktı. Başlık, kesit, taramalar, lejant ve metraj tablosu görünür. Menü, ayarlar, uyarılar ve düğmeler PDF dışında kaldı.
 - Tarayıcı kontrolünü tekrarlamak için derlemeden sonra Playwright bulunan bir ortamda `node tests/browser-regression.cjs` çalıştır. `PLAYWRIGHT_MODULE` ve `CHROME_PATH` değişkenleriyle mevcut Playwright kurulumunu ve Chrome yürütülebilir dosyasını gösterebilirsin. Betik geçici bir veritabanı kullanır ve üretilen PDF’lerin konumunu yazar.
+
+## Pafta logosu ve otopark alanı
+
+- Üretim derlemesi, otomatik regresyon ve Chrome tarayıcı akışı başarılı. Otopark/sığınak alanının kesitte gösterilmesi ve alan değişikliğinin genel brüt hesaplarına yansıması kontrol edildi.
+- Tek ve iki sayfalık PDF üretildi. Logo, Türkçe tarih, sabit ibare ve pafta düzeni görsel olarak kontrol edildi.
+- Otopark/sığınak başlığının değiştirilmesi, senaryoya kaydı ve yeniden yüklenmesi Chrome regresyonuna eklendi; üretim derlemesi ve otomatik testler başarılı.
+- Paftada tek logo ve iletişim bilgileri için üretim derlemesi, regresyonlar ve Chrome PDF kontrolü başarılı. Tek sayfalık çıktı görsel olarak incelendi; uzun örnek iki yatay A4 sayfa olarak üretildi.
+- Paftanın mavi tek satırlı üst bilgileri, logo ve metraj tablosu yerleşimi için derleme, otomatik regresyon ve Chrome PDF kontrolleri başarılı; tek ve iki sayfalık çıktılar görsel olarak incelendi.

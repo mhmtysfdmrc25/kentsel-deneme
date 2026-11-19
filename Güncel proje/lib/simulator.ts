@@ -14,6 +14,7 @@ export type BuildingDesign = {
   ground: boolean;
   basementFloors: number;
   serviceBasement: boolean;
+  serviceTitle?: string;
   columns: number;
   headings: string[];
   duplex: boolean;
@@ -118,6 +119,7 @@ export function validateDesign(value: unknown): BuildingDesign {
   }
   return {
     normalFloors, ground: flag(data.ground), basementFloors, serviceBasement: flag(data.serviceBasement),
+    ...(data.serviceTitle === undefined ? {} : { serviceTitle: labelText(data.serviceTitle, MAX_SECTION_TITLE_LENGTH) }),
     columns, headings, duplex: flag(data.duplex), contractorFloors, floorAreas, units,
   };
 }
@@ -142,6 +144,7 @@ export function deriveSection(project: Project, scenario: Scenario, design: Buil
   const footprint = areaProduct(project.arsa_alani, project.taks);
   const emsal = areaProduct(project.arsa_alani, project.kaks);
   const defaultArea = footprint ?? (emsal === null || floorCount === 0 ? null : emsal / floorCount);
+  const serviceArea = serviceBasement && basementFloors > 0 ? design.floorAreas[`basement-${basementFloors}`] ?? defaultArea : 0;
   const selected = new Set(design.contractorFloors);
   const floors: SectionFloor[] = [];
 
@@ -159,7 +162,7 @@ export function deriveSection(project: Project, scenario: Scenario, design: Buil
         const defaultTitle = `${number} NOLU ${type === 'shop' ? 'DÜKKAN' : 'DAİRE'}`;
         const title = override?.title || defaultTitle;
         const gross = override?.gross ?? unitArea;
-        units.push({ id: unitId, title, type, gross, totalGross: override?.totalGross ?? gross, roofArrow: roofExists && id === `normal-${normalFloors}` && type === 'duplex' });
+        units.push({ id: unitId, title, type, gross, totalGross: null, roofArrow: roofExists && id === `normal-${normalFloors}` && type === 'duplex' });
       }
     }
     const derivedArea = units.length === 0 ? estimatedArea : units.every(unit => unit.gross !== null)
@@ -176,6 +179,11 @@ export function deriveSection(project: Project, scenario: Scenario, design: Buil
   for (let floor = 1; floor <= basementFloors; floor++) {
     const service = serviceBasement && floor === basementFloors;
     addFloor(`basement-${floor}`, `${floor}. BODRUM KAT`, 'basement', residentialBasementCount - floor, service, scenario.projection && floor === 1);
+  }
+  const apartments = floors.flatMap(floor => floor.units).filter(unit => unit.type !== 'shop');
+  const sharedArea = apartments.length > 0 && serviceArea !== null ? serviceArea / apartments.length : null;
+  for (const unit of floors.flatMap(floor => floor.units)) {
+    unit.totalGross = unit.gross === null ? null : unit.type === 'shop' ? unit.gross : sharedArea === null ? null : unit.gross + sharedArea;
   }
   const totalArea = floorCount > 0 && floors.every(floor => floor.area !== null) ? floors.reduce((sum, floor) => sum + floor.area!, 0) : null;
   return { floors, totalArea, totalUnits: availableUnits * columns, totalFloors: floorCount };

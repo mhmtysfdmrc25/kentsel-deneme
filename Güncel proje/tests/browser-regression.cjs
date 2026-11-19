@@ -14,6 +14,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 async function main() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kentsel-browser-'));
   fs.cpSync(path.join(repo, '.next'), path.join(root, '.next'), { recursive: true });
+  fs.cpSync(path.join(repo, 'public'), path.join(root, 'public'), { recursive: true });
   fs.copyFileSync(path.join(repo, 'package.json'), path.join(root, 'package.json'));
   fs.symlinkSync(path.join(repo, 'node_modules'), path.join(root, 'node_modules'), 'junction');
   const port = await new Promise((resolve, reject) => {
@@ -134,6 +135,7 @@ async function simulator(page, nav, projectId, root) {
   assert.equal(await page.getByLabel('Kattaki Sütun (Daire) Sayısı', { exact: true }).inputValue(), '3');
   assert.equal(await page.getByLabel(/Üst Katlarda Çıkma/).isChecked(), true);
   const drawing = page.locator('.section-sheet:not(.section-print-page)');
+  assert.match(await drawing.locator('[data-floor="basement-2"]').textContent(), /OTOPARK \/ SIĞINAK \/ ORTAK ALAN/);
   assert.equal(await drawing.locator('[data-unit="normal-1:0"]').getAttribute('aria-label'), '1. NORMAL KAT, Köşe Dükkan düzenle');
   assert.equal(await drawing.locator('[data-floor="ground"]').getAttribute('data-inset'), 'true');
   assert.equal(await drawing.locator('[data-floor="basement-1"]').getAttribute('data-inset'), 'true');
@@ -149,6 +151,20 @@ async function simulator(page, nav, projectId, root) {
   assert.equal(await page.getByRole('navigation').isVisible(), false);
   assert.equal(await page.locator('.section-print-page').count(), 1);
   assert.equal(await page.locator('.section-print-page').isVisible(), true);
+  assert.equal(await page.locator('.section-print-page .section-company-logo img').first().evaluate(img => img.complete && img.naturalWidth > 0), true);
+  assert.equal(await page.locator('.section-print-page .section-company-logo img').count(), 1);
+  assert.match(await page.locator('.section-print-page .section-contact').innerText(), /www\.asdemyapi\.com/);
+  assert.match(await page.locator('.section-print-page .section-contact').innerText(), /\+90 \(532\) 664 47 25/);
+  const headerLayout = await page.locator('.section-print-page .section-sheet-heading').evaluate(header => {
+    const children = [...header.children];
+    const contact = header.querySelector('.section-contact');
+    return { tops: children.map(child => child.getBoundingClientRect().top), contactTops: [...contact.children].map(child => child.getBoundingClientRect().top), color: getComputedStyle(header).color, line: getComputedStyle(header).borderBottomColor, overflow: header.scrollWidth > header.clientWidth };
+  });
+  assert.equal(headerLayout.color, 'rgb(34, 63, 142)');
+  assert.equal(headerLayout.line, 'rgb(34, 63, 142)');
+  assert.equal(headerLayout.overflow, false);
+  assert.ok(Math.max(...headerLayout.tops) - Math.min(...headerLayout.tops) < 5);
+  assert.ok(Math.abs(headerLayout.contactTops[0] - headerLayout.contactTops[1]) < 1);
   await page.pdf({ ...pdfOptions, path: path.join(root, 'kesit.pdf') });
   await page.emulateMedia({ media: 'screen' });
   await page.screenshot({ path: path.join(root, 'simulator.png'), fullPage: true });
@@ -167,7 +183,7 @@ async function editSheet(page) {
   await unit.getByLabel('Başlık', { exact: true }).fill('Köşe Dükkan');
   await unit.locator('select[name="type"]').selectOption('shop');
   await unit.getByLabel('Brüt m²', { exact: true }).fill('145');
-  await unit.getByLabel('Genel Brüt m²', { exact: true }).fill('180');
+  assert.equal(await unit.getByLabel('Genel Brüt m²', { exact: true }).getAttribute('readonly'), '');
   await unit.getByRole('button', { name: 'Uygula', exact: true }).click();
   await unit.waitFor({ state: 'hidden' });
   await drawing.getByRole('button', { name: '1. NORMAL KAT alanını düzenle', exact: true }).click();
@@ -176,6 +192,14 @@ async function editSheet(page) {
   await floor.getByRole('button', { name: 'Uygula', exact: true }).click();
   await floor.waitFor({ state: 'hidden' });
   assert.match(await drawing.locator('.section-area-table').innerText(), /450,00/);
+  await drawing.getByRole('button', { name: '2. BODRUM KAT alanını düzenle', exact: true }).click();
+  const service = page.getByRole('dialog', { name: 'Kat Alanını Düzenle' });
+  await service.getByRole('spinbutton').fill('300');
+  await service.getByLabel('Başlık', { exact: true }).fill('OTOPARK / SIĞINAK / ORTAK ALAN');
+  await service.getByRole('button', { name: 'Uygula', exact: true }).click();
+  await service.waitFor({ state: 'hidden' });
+  assert.match(await drawing.locator('[data-floor="basement-2"]').textContent(), /300,00/);
+  assert.match(await drawing.locator('[data-floor="basement-2"]').textContent(), /OTOPARK \/ SIĞINAK \/ ORTAK ALAN/);
 }
 
 main().catch(error => { console.error(error); process.exitCode = 1; });

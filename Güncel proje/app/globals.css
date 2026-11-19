@@ -47,7 +47,7 @@ button:focus-visible { outline: 2px solid #1b6258; outline-offset: 3px; }
 .section-empty { padding: 2.5rem 0; text-align: center; font-size: .875rem; }
 .section-print-layout { display: none; }
 
-@page section-landscape { size: A4 landscape; margin: 10mm; }
+@page section-landscape { size: A4 landscape; margin: 0; }
 @media print {
   html:has(.section-print-layout),
   body:has(.section-print-layout) { margin: 0 !important; background: #fff !important; }
@@ -67,14 +67,38 @@ button:focus-visible { outline: 2px solid #1b6258; outline-offset: 3px; }
   .section-print-page {
     page: section-landscape;
     break-inside: avoid;
+    position: relative;
+    height: 210mm;
     border: 0;
     border-radius: 0;
-    padding: 0;
+    padding: 10mm;
     box-shadow: none;
   }
   .section-print-page + .section-print-page { break-before: page; }
-  .section-print-page .section-sheet-content { grid-template-columns: minmax(0, 1fr) 62mm; gap: 6mm; }
+  .section-print-page .section-sheet-heading {
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 3mm;
+    border-color: #223f8e;
+    color: #223f8e;
+  }
+  .section-print-page .section-sheet-heading > div:first-child {
+    display: flex;
+    align-items: baseline;
+    gap: 3mm;
+    min-width: 0;
+  }
+  .section-print-page .section-sheet-heading h3 { font-size: 11pt; white-space: nowrap; }
+  .section-print-page .section-sheet-heading p { margin: 0; font-size: 9pt; white-space: nowrap; }
+  .section-print-page .section-sheet-heading > div:first-child p { overflow: hidden; text-overflow: ellipsis; }
+  .section-print-page .section-sheet-content { grid-template-columns: minmax(0, 1fr) 54mm; gap: 4mm; }
   .section-print-page .section-drawing { overflow: visible; max-height: none; }
-  .section-print-page .section-svg { min-width: 0; max-height: 147mm; }
-  .section-print-page .section-area-table { width: 100%; }
+  .section-print-page .section-svg { min-width: 0; max-height: 132mm; }
+  .section-print-page .section-area-table { width: 100%; font-size: .67rem; }
+  .section-print-page .section-area-table th, .section-print-page .section-area-table td { padding: .3rem .35rem; }
+  .section-contact { display: flex; align-items: center; gap: 3mm; white-space: nowrap; }
+  .section-print-footer { position: absolute; left: 10mm; right: 10mm; bottom: 2mm; height: 26mm; font-size: 8pt; }
+  .section-print-footer p { position: absolute; left: 0; bottom: 19mm; margin: 0; }
+  .section-company-logo { position: absolute; left: 50%; bottom: 0; transform: translateX(-50%); width: 105mm; height: 18mm; overflow: hidden; }
+  .section-company-logo img { position: absolute; width: 140%; max-width: none; height: auto; left: -34%; top: 50%; transform: translateY(-50%); }
 }

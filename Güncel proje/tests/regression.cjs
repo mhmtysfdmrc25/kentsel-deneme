@@ -38,7 +38,18 @@ function testSection() {
   assert.equal(ground.inset, true);
   assert.equal(basement.inset, true);
   assert.equal(basement.contractor, true);
-  assert.deepEqual(ground.units[0], { id: 'ground:0', title: 'Köşe Dükkan', type: 'shop', gross: 125, totalGross: 160, roofArrow: false });
+  assert.equal(ground.units[0].gross, 125);
+  assert.equal(ground.units[0].totalGross, 125);
+  assert.ok(Math.abs(ground.units[1].totalGross - (400 / 3 + 400 / 11)) < 1e-9);
+  const updatedService = deriveSection(parcel, scenario, { ...design, floorAreas: { ...design.floorAreas, 'basement-2': 300 } });
+  assert.equal(updatedService.floors.find(floor => floor.service).area, 300);
+  assert.ok(Math.abs(updatedService.floors.find(floor => floor.id === 'ground').units[1].totalGross - (400 / 3 + 300 / 11)) < 1e-9);
+  const fifteen = deriveSection(parcel, scenario, { ...emptyDesign(), normalFloors: 4, basementFloors: 1, columns: 3, floorAreas: { 'basement-1': 300 } });
+  assert.equal(fifteen.totalUnits, 15);
+  const firstApartment = fifteen.floors.find(floor => floor.id === 'ground').units[0];
+  assert.equal(firstApartment.totalGross, firstApartment.gross + 20);
+  const noService = deriveSection(parcel, scenario, { ...design, serviceBasement: false });
+  assert.equal(noService.floors.find(floor => floor.id === 'ground').units[0].totalGross, 125);
   assert.equal(service.service, true);
   assert.equal(service.inset, false);
   assert.equal(service.contractor, false);
@@ -54,6 +65,8 @@ function testSection() {
   assert.ok(Math.abs(deriveSection({ ...parcel, taks: null }, scenario, emptyDesign()).totalArea - 2000) < 1e-9);
   assert.equal(deriveSection({ ...parcel, taks: null, kaks: null }, scenario, emptyDesign()).totalArea, null);
   assert.throws(() => validateDesign({ ...design, columns: 7 }), /Sütun sayısı/);
+  assert.equal(validateDesign({ ...design, serviceTitle: 'OTOPARK / SIĞINAK / ORTAK ALAN' }).serviceTitle, 'OTOPARK / SIĞINAK / ORTAK ALAN');
+  assert.equal(validateDesign(design).serviceTitle, undefined);
   assert.throws(() => validateDesign({ ...design, floorAreas: { ground: -5 } }), /Kesit alanı/);
   assert.throws(() => validateDesign({ ...design, units: { 'invalid:0': { title: 'Daire' } } }), /kimliği/);
   assert.throws(() => validateDesign({ ...design, units: { 'normal-1:0': { gross: 81, totalGross: 80 } } }), /brüt/i);

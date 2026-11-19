@@ -58,10 +58,11 @@ function Count({ label, value, min = 0, max, optional = false, onChange }: {
 
 type Editing = { floor: SectionFloor; unit?: SectionUnit };
 
-function SectionEditor({ editing, override, floorOverride, onClose, onApply }: {
+function SectionEditor({ editing, override, floorOverride, serviceTitle, onClose, onApply }: {
   editing: Editing;
   override?: UnitOverride;
   floorOverride?: number;
+  serviceTitle?: string;
   onClose: () => void;
   onApply: (data: { area?: number; title?: string; type?: SectionUnit['type']; gross?: number; totalGross?: number }) => void;
 }) {
@@ -79,17 +80,11 @@ function SectionEditor({ editing, override, floorOverride, onClose, onApply }: {
     };
     const area = readArea('area');
     const gross = readArea('gross');
-    const totalGross = readArea('totalGross');
-    if (gross !== undefined && totalGross !== undefined && gross > totalGross) {
-      setError('Genel brüt alan, brüt alandan küçük olamaz.');
-      return;
-    }
     onApply(unit ? {
       title: String(form.get('title') ?? '').trim() || undefined,
       type: form.get('type') === unit.type ? override?.type : form.get('type') as SectionUnit['type'],
       gross,
-      totalGross,
-    } : { area });
+    } : { area, title: floor.service ? String(form.get('title') ?? '').trim() : undefined });
   }
 
   return <dialog ref={dialog} onClose={onClose} className="m-auto w-[min(92vw,28rem)] rounded-2xl border border-[#dbe5e2] bg-white p-6 text-[#142e32] shadow-xl backdrop:bg-black/40" aria-labelledby="section-editor-title">
@@ -105,9 +100,9 @@ function SectionEditor({ editing, override, floorOverride, onClose, onApply }: {
         </select></label>
         <div className="grid grid-cols-2 gap-3">
           <label className="block text-sm font-medium">Brüt m²<input name="gross" type="number" min="0" max={MAX_SECTION_AREA} step="any" defaultValue={override?.gross ?? ''} placeholder={areaText(unit.gross)} className={`mt-1 ${inputClass}`} /></label>
-          <label className="block text-sm font-medium">Genel Brüt m²<input name="totalGross" type="number" min="0" max={MAX_SECTION_AREA} step="any" defaultValue={override?.totalGross ?? ''} placeholder={areaText(unit.totalGross)} className={`mt-1 ${inputClass}`} /></label>
+          <label className="block text-sm font-medium">Genel Brüt m²<input readOnly value={areaText(unit.totalGross)} className={`mt-1 ${inputClass} bg-[#f2f6f4]`} /></label>
         </div>
-      </> : <label className="block text-sm font-medium">Kat toplam inşaat alanı (m²)<input name="area" type="number" min="0" max={MAX_SECTION_AREA} step="any" defaultValue={floorOverride ?? ''} placeholder={areaText(floor.area)} className={`mt-1 ${inputClass}`} /></label>}
+      </> : <>{floor.service && <label className="block text-sm font-medium">Başlık<input name="title" maxLength={MAX_SECTION_TITLE_LENGTH} defaultValue={serviceTitle ?? ''} placeholder="OTOPARK / SIĞINAK" className={`mt-1 ${inputClass}`} /></label>}<label className="block text-sm font-medium">Kat toplam inşaat alanı (m²)<input name="area" type="number" min="0" max={MAX_SECTION_AREA} step="any" defaultValue={floorOverride ?? ''} placeholder={areaText(floor.area)} className={`mt-1 ${inputClass}`} /></label></>}
       <p className="text-xs text-[#536c64]">Alanı boş bırakırsan otomatik değer kullanılır.</p>
       {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
       <div className="flex justify-end gap-3">
@@ -246,13 +241,13 @@ export function ScenarioPanel({ project }: { project: Project }) {
       <SectionSheet project={project} design={design} section={section} print />
     </section>
 
-    {editing && <SectionEditor editing={editing} override={editing.unit ? design.units[editing.unit.id] : undefined} floorOverride={design.floorAreas[editing.floor.id]} onClose={() => setEditing(null)} onApply={({ area, ...unitData }) => {
+    {editing && <SectionEditor editing={editing} override={editing.unit ? design.units[editing.unit.id] : undefined} floorOverride={design.floorAreas[editing.floor.id]} serviceTitle={design.serviceTitle} onClose={() => setEditing(null)} onApply={({ area, ...unitData }) => {
       if (editing.unit) updateDesign({ units: { ...design.units, [editing.unit.id]: unitData } });
       else {
         const floorAreas = { ...design.floorAreas };
         if (area === undefined) delete floorAreas[editing.floor.id];
         else floorAreas[editing.floor.id] = area;
-        updateDesign({ floorAreas });
+        updateDesign({ floorAreas, ...(editing.floor.service ? { serviceTitle: unitData.title || undefined } : {}) });
       }
       setEditing(null);
     }} />}
