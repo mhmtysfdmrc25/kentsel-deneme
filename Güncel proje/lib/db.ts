@@ -13,7 +13,7 @@ db.pragma('foreign_keys = ON');
 const schema = `id INTEGER PRIMARY KEY AUTOINCREMENT,
   semt TEXT, mahalle TEXT, ada TEXT, parsel TEXT, arsa_alani REAL, taks REAL, kaks REAL,
   bina_sayisi INTEGER, daire_sayisi INTEGER, dukkan_sayisi INTEGER,
-  insaat_alani REAL, imar_tipi TEXT, riskli_yapi TEXT, notlar TEXT, binalar_detay TEXT, daire_metraj_detaylari TEXT, cost_mode TEXT, quick_cost_data TEXT, detailed_cost_data TEXT, architectural_scenarios TEXT,
+  insaat_alani REAL, imar_tipi TEXT, riskli_yapi TEXT, notlar TEXT, binalar_detay TEXT, daire_metraj_detaylari TEXT, cost_mode TEXT, quick_cost_data TEXT, detailed_cost_data TEXT, architectural_scenarios TEXT, financial_scenarios TEXT,
   created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now'))`;
 // Eski NOT NULL şemasını kayıtları ve kimlikleri koruyarak tek işlemde taşı.
 db.transaction(() => {
@@ -24,7 +24,7 @@ db.transaction(() => {
   }
   const columns = db.pragma('table_info(projects)') as { name: string; notnull: number }[];
   if (columns.some(column => column.notnull) || !columns.some(column => column.name === 'riskli_yapi')) {
-    const target = ['id', 'semt', 'mahalle', 'ada', 'parsel', 'arsa_alani', 'taks', 'kaks', 'bina_sayisi', 'daire_sayisi', 'dukkan_sayisi', 'insaat_alani', 'imar_tipi', 'riskli_yapi', 'notlar', 'binalar_detay', 'daire_metraj_detaylari', 'cost_mode', 'quick_cost_data', 'detailed_cost_data', 'architectural_scenarios', 'created_at', 'updated_at'];
+    const target = ['id', 'semt', 'mahalle', 'ada', 'parsel', 'arsa_alani', 'taks', 'kaks', 'bina_sayisi', 'daire_sayisi', 'dukkan_sayisi', 'insaat_alani', 'imar_tipi', 'riskli_yapi', 'notlar', 'binalar_detay', 'daire_metraj_detaylari', 'cost_mode', 'quick_cost_data', 'detailed_cost_data', 'architectural_scenarios', 'financial_scenarios', 'created_at', 'updated_at'];
     const common = target.filter(name => columns.some(column => column.name === name)).join(', ');
     db.exec(`CREATE TABLE projects_migration (${schema}); INSERT INTO projects_migration (${common}) SELECT ${common} FROM projects; DROP TABLE projects; ALTER TABLE projects_migration RENAME TO projects;`);
   } else {
@@ -36,6 +36,7 @@ db.transaction(() => {
     if (!columns.some(column => column.name === 'quick_cost_data')) db.exec('ALTER TABLE projects ADD COLUMN quick_cost_data TEXT');
     if (!columns.some(column => column.name === 'detailed_cost_data')) db.exec('ALTER TABLE projects ADD COLUMN detailed_cost_data TEXT');
     if (!columns.some(column => column.name === 'architectural_scenarios')) db.exec('ALTER TABLE projects ADD COLUMN architectural_scenarios TEXT');
+    if (!columns.some(column => column.name === 'financial_scenarios')) db.exec('ALTER TABLE projects ADD COLUMN financial_scenarios TEXT');
   }
 }).immediate();
 export default db;

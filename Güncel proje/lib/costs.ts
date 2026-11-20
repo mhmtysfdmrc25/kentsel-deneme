@@ -24,6 +24,15 @@ export function savedCostTotal(project: Project | null): number | null {
   if (!project?.cost_mode) return null;
   try { return project.cost_mode === 'quick' ? quickTotal(projectArea(project), JSON.parse(project.quick_cost_data ?? 'null')) : project.cost_mode === 'detailed' ? detailedTotal(JSON.parse(project.detailed_cost_data ?? 'null')) : null; } catch { return null; }
 }
+export function savedQuickAid(project: Project, costTotal: number | null): number | null {
+  if (project.cost_mode !== 'quick' || costTotal === null || !project.quick_cost_data) return null;
+  try {
+    const { rent } = JSON.parse(project.quick_cost_data);
+    return typeof rent === 'number' && Number.isFinite(rent) && rent >= 0 && rent <= costTotal ? rent : null;
+  } catch {
+    return null;
+  }
+}
 function numeric(value: unknown): value is number | null { return value === null || (typeof value === 'number' && Number.isFinite(value) && value >= 0); }
 export function validateCosts(data: unknown, area: number | null) {
   if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Geçersiz maliyet verileri.');

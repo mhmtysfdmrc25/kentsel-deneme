@@ -2,8 +2,18 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import type { Project } from '@/lib/projects';
 import { savedCostTotal } from '@/lib/costs';
+import type { BuildingDesign, SimulatorScenario } from '@/lib/simulator';
+import type { FinancialScenario } from '@/lib/financial';
 
-type State = { projects: Project[]; activeProject: Project | null; activeCostTotal: number | null; selectProject: (id: number | null) => void; refresh: () => Promise<void>; loading: boolean; error: string };
+type ArchitectureDraft = SimulatorScenario & { design: BuildingDesign };
+type State = {
+  projects: Project[]; activeProject: Project | null; activeCostTotal: number | null;
+  activeArchitectureDraft: ArchitectureDraft | undefined; activeFinancialDraft: FinancialScenario | undefined;
+  setArchitectureDraft: (id: number, draft: ArchitectureDraft) => void;
+  clearArchitectureDraft: (id: number, expected: ArchitectureDraft) => void;
+  setFinancialDraft: (id: number, draft: FinancialScenario) => void;
+  selectProject: (id: number | null) => void; refresh: () => Promise<void>; loading: boolean; error: string;
+};
 const Context = createContext<State | null>(null);
 export function ProjectProvider({ children }: { children: ReactNode }) {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -11,6 +21,8 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [initialized, setInitialized] = useState(false);
+  const [architectureDrafts, setArchitectureDrafts] = useState<Record<number, ArchitectureDraft>>({});
+  const [financialDrafts, setFinancialDrafts] = useState<Record<number, FinancialScenario>>({});
   const refresh = useCallback(async () => {
     const response = await fetch('/api/projects', { cache: 'no-store' });
     if (!response.ok) throw new Error('Projeler yüklenemedi.');
@@ -31,7 +43,20 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   }, [activeId, initialized]);
   const activeProject = projects.find(p => p.id === activeId) ?? null;
   const activeCostTotal = savedCostTotal(activeProject);
-  return <Context.Provider value={{ projects, activeProject, activeCostTotal, selectProject: setActiveId, refresh, loading, error }}>{children}</Context.Provider>;
+  const activeArchitectureDraft = activeProject ? architectureDrafts[activeProject.id] : undefined;
+  const activeFinancialDraft = activeProject ? financialDrafts[activeProject.id] : undefined;
+  const setArchitectureDraft = (id: number, draft: ArchitectureDraft) => setArchitectureDrafts(previous => ({ ...previous, [id]: draft }));
+  const clearArchitectureDraft = (id: number, expected: ArchitectureDraft) => setArchitectureDrafts(previous => {
+    if (previous[id] !== expected) return previous;
+    const next = { ...previous };
+    delete next[id];
+    return next;
+  });
+  const setFinancialDraft = (id: number, draft: FinancialScenario) => setFinancialDrafts(previous => ({ ...previous, [id]: draft }));
+  return <Context.Provider value={{
+    projects, activeProject, activeCostTotal, activeArchitectureDraft, activeFinancialDraft,
+    setArchitectureDraft, clearArchitectureDraft, setFinancialDraft, selectProject: setActiveId, refresh, loading, error,
+  }}>{children}</Context.Provider>;
 }
 export function useProjects() {
   const context = useContext(Context);

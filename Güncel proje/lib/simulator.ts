@@ -10,7 +10,7 @@ export const MAX_SECTION_AREA = 1_000_000_000;
 
 export const UNIT_TYPES = ['apartment', 'shop', 'duplex', 'storage', 'parking'] as const;
 export type UnitType = typeof UNIT_TYPES[number];
-export type UnitOverride = { title?: string; type?: UnitType; gross?: number; totalGross?: number; isContractorShare?: boolean };
+export type UnitOverride = { title?: string; type?: UnitType; gross?: number; totalGross?: number; net?: number; isContractorShare?: boolean };
 export type BuildingDesign = {
   normalFloors: number;
   ground: boolean;
@@ -32,6 +32,7 @@ export type SectionUnit = {
   title: string;
   type: UnitType;
   allowedTypes: UnitType[];
+  net: number | null;
   gross: number | null;
   totalGross: number | null;
   roofArrow: boolean;
@@ -142,6 +143,7 @@ export function validateDesign(value: unknown): BuildingDesign {
       override.type = unit.type as UnitType;
     }
     if (unit.gross !== undefined) override.gross = areaValue(unit.gross);
+    if (unit.net !== undefined) override.net = areaValue(unit.net);
     if (unit.totalGross !== undefined) override.totalGross = areaValue(unit.totalGross);
     if (override.gross !== undefined && override.totalGross !== undefined && override.gross > override.totalGross) {
       throw new Error('Bağımsız bölümün genel brüt alanı brüt alanından küçük olamaz.');
@@ -161,6 +163,12 @@ export function validateSimulator(value: unknown): SimulatorScenario {
   const scenario = validateScenario(value);
   const { design } = record(value);
   return design === undefined ? scenario : { ...scenario, design: validateDesign(design) };
+}
+
+export function readSimulator(project: Project): SimulatorScenario | null {
+  if (!project.architectural_scenarios) return null;
+  try { return validateSimulator(JSON.parse(project.architectural_scenarios)); }
+  catch { return null; }
 }
 
 function areaProduct(a: unknown, b: unknown): number | null {
@@ -226,7 +234,7 @@ export function deriveSection(project: Project, scenario: Scenario, design: Buil
         const number = order * columns + column + 1;
         const title = (overriddenTypeAllowed ? override?.title : undefined) || (kind === 'roof' ? 'ÇATI KATI DAİRESİ' : `${number} NOLU ${unitLabels[type]}`);
         const gross = override?.gross ?? unitArea;
-        units.push({ id: unitId, title, type, allowedTypes, gross, totalGross: null, roofArrow: connectToRoof && type === 'duplex', isContractorShare: isShareableUnit(type) && (override?.isContractorShare ?? contractor) });
+        units.push({ id: unitId, title, type, allowedTypes, net: override?.net ?? null, gross, totalGross: null, roofArrow: connectToRoof && type === 'duplex', isContractorShare: isShareableUnit(type) && (override?.isContractorShare ?? contractor) });
       }
     }
     const derivedArea = units.length === 0 ? estimatedArea : units.every(unit => unit.gross !== null)

@@ -2,6 +2,13 @@
 
 Bu dosyada çalıştırılan kontroller ve sonuçları tutulur.
 
+## Kâr/Zarar ve Fizibilite
+
+- Konut ve dükkanın brüt alana göre satış geliri, bölüm bazında fiyat, malik daire adedi, kira ve taşınma yardımı, finansman ve risk yüzdeleri, kâr marjı ve ROI doğrulandı. Hızlı Fizibilite’den gelen yardımın çift sayılmadığı ve sıfıra bölme durumlarında oranın boş gösterildiği sınandı.
+- Eski bir SQLite tablosuna `financial_scenarios` sütunu eklendi. Proje ve maliyet bilgileri korundu. API üzerinden finansal senaryo kaydı, geçersiz girdi ve mevcut olmayan proje denetimi çalıştırıldı.
+- Chrome’da iki proje arasında geçişte taslakların ayrıldığı ve Mimari Simülatör’de kaydedilmemiş müteahhit payı değişikliğinin satılabilir alan ile gelire anında yansıdığı doğrulandı. Türkçe TL, yüzde ve m² girişleri, yeniden düzenleme ve kaydı yeniden açma sınandı.
+- Yönetici Özeti tek sayfa dikey A4 çıktı. Ada/parsel, kârlılık oranları, gider tablosu ve şirket alt bilgisi Poppler ile görsel olarak incelendi. Mevcut yatay kesit PDF testleri de geçti.
+
 ## Çatı şekli, kullanımı ve kesit
 
 - Üretim derlemesi, `npm test` ve macOS Chrome regresyonu geçti. Eski çatı seçimleri ile dubleks bayrağının yeni alanlara aktarımı, teras ve eğimli çatı kilitleri, piyes alanının bir kez sayılması ve daha önceki proje ile maliyet akışları doğrulandı.

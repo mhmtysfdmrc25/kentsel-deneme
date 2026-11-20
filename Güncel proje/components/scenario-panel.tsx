@@ -4,10 +4,11 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Check, getParameterRows, ImarControls } from '@/components/imar-controls';
 import { useProjects } from '@/components/project-context';
 import { SectionSheet } from '@/components/section-sheet';
+import { FormattedNumberInput } from '@/components/formatted-number-input';
 import { DEFAULT_RULE_SETTINGS, evaluateImarRules, normalizeRuleSettings, type RuleSettings } from '@/lib/imarRules';
 import { emptyScenario, type Scenario } from '@/lib/scenario';
 import {
-  deriveSection, emptyDesign, isShareableUnit, MAX_SECTION_AREA, MAX_SECTION_TITLE_LENGTH, validateSimulator,
+  deriveSection, emptyDesign, isShareableUnit, MAX_SECTION_AREA, MAX_SECTION_TITLE_LENGTH, readSimulator, validateSimulator,
   type BuildingDesign, type SectionFloor, type SectionUnit, type SimulatorScenario, type UnitOverride,
 } from '@/lib/simulator';
 import type { Project } from '@/lib/projects';
@@ -33,6 +34,7 @@ function SectionEditor({ editing, override, floorOverride, serviceTitle, floorSe
   const { unit, floor } = editing;
   const dialog = useRef<HTMLDialogElement>(null);
   const [type, setType] = useState(unit?.type ?? 'apartment');
+  const [net, setNet] = useState(unit?.net ?? null);
   const [share, setShare] = useState(unit && isShareableUnit(unit.type) ? unit.isContractorShare : floorSelected);
   useEffect(() => { dialog.current?.showModal(); }, []);
 
@@ -49,6 +51,7 @@ function SectionEditor({ editing, override, floorOverride, serviceTitle, floorSe
         title: text('title') || undefined,
         type: type === unit.type ? override?.type : type,
         gross: number('gross'),
+        net: isShareableUnit(type) ? net ?? undefined : override?.net,
         isContractorShare: isShareableUnit(type) && share !== floorSelected ? share : undefined,
       } });
     } else onApply({ area: number('area'), title: floor.service ? text('title') : undefined });
@@ -73,6 +76,7 @@ function SectionEditor({ editing, override, floorOverride, serviceTitle, floorSe
           <label className="block text-sm font-medium">{unit.roofArrow ? 'Piyes Hariç Brüt m²' : 'Brüt m²'}<input name="gross" type="number" min="0" max={MAX_SECTION_AREA} step="any" defaultValue={override?.gross ?? ''} placeholder={areaText(unit.gross === null ? null : unit.gross - (unit.roofArea ?? 0))} className={`mt-1 ${inputClass}`} /></label>
           <label className="block text-sm font-medium">Genel Brüt m²<input readOnly value={areaText(unit.totalGross)} className={`mt-1 ${inputClass} bg-[#f2f6f4]`} /></label>
         </div>
+        {isShareableUnit(type) && <FormattedNumberInput label="Net alan (isteğe bağlı)" unit="m²" max={MAX_SECTION_AREA} value={net} onChange={setNet} />}
         {isShareableUnit(type) && <Check checked={share} onChange={setShare}>Müteahhit Payı (Taralı Göster)</Check>}
       </> : <>
         {floor.service && <label className="block text-sm font-medium">Başlık<input name="title" maxLength={MAX_SECTION_TITLE_LENGTH} defaultValue={serviceTitle ?? ''} placeholder="OTOPARK / SIĞINAK" className={`mt-1 ${inputClass}`} /></label>}
@@ -88,15 +92,6 @@ function SectionEditor({ editing, override, floorOverride, serviceTitle, floorSe
   </dialog>;
 }
 
-function load(project: Project): SimulatorScenario {
-  try {
-    if (project.architectural_scenarios) return validateSimulator(JSON.parse(project.architectural_scenarios));
-  } catch {
-    // Önceki veya eksik bir kayıtla yeni bir taslak açılabilir.
-  }
-  return emptyScenario();
-}
-
 function initialDesign(project: Project, scenario: SimulatorScenario): BuildingDesign {
   const design = scenario.design ?? emptyDesign();
   const rules = design.rules ?? {
@@ -108,8 +103,8 @@ function initialDesign(project: Project, scenario: SimulatorScenario): BuildingD
 }
 
 export function ScenarioPanel({ project }: { project: Project }) {
-  const { refresh } = useProjects();
-  const [initial] = useState(() => load(project));
+  const { refresh, activeArchitectureDraft, setArchitectureDraft, clearArchitectureDraft } = useProjects();
+  const [initial] = useState(() => activeArchitectureDraft ?? readSimulator(project) ?? emptyScenario());
   const [scenario, setScenario] = useState<Scenario>(initial);
   const [design, setDesign] = useState<BuildingDesign>(() => initialDesign(project, initial));
   const [editing, setEditing] = useState<Editing | null>(null);
@@ -131,8 +126,10 @@ export function ScenarioPanel({ project }: { project: Project }) {
   const clearFeedback = () => { setMessage(''); setError(''); };
 
   function update(nextDesign: BuildingDesign, nextScenario = scenario) {
-    setDesign({ ...nextDesign, rules: normalizeRuleSettings(project, nextDesign, nextDesign.rules ?? rules, nextScenario) });
+    const normalized = { ...nextDesign, rules: normalizeRuleSettings(project, nextDesign, nextDesign.rules ?? rules, nextScenario) };
+    setDesign(normalized);
     setScenario(nextScenario);
+    setArchitectureDraft(project.id, { ...nextScenario, design: normalized });
     clearFeedback();
   }
 
@@ -170,7 +167,11 @@ export function ScenarioPanel({ project }: { project: Project }) {
       });
       const body = await result.json();
       if (!result.ok) throw new Error(body.error || 'Senaryo kaydedilemedi.');
-      try { await refresh(); setMessage('Senaryo kaydedildi.'); }
+      try {
+        await refresh();
+        if (activeArchitectureDraft) clearArchitectureDraft(project.id, activeArchitectureDraft);
+        setMessage('Senaryo kaydedildi.');
+      }
       catch { setError('Senaryo kaydedildi. Proje listesi yenilenemedi.'); }
     } catch (e) { setError(e instanceof Error ? e.message : 'Senaryo kaydedilemedi.'); }
     finally { setBusy(false); }

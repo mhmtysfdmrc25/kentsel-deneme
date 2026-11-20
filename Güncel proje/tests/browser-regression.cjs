@@ -44,9 +44,12 @@ async function main() {
     const nav = label => page.getByRole('navigation').getByRole('button', { name: label, exact: true });
     const projectTab = 'Proje Yönetimi';
     const costTab = 'Maliyet Analizi';
+    const financialTab = 'Kâr/Zarar (Fizibilite)';
     const labels = await page.getByRole('navigation').getByRole('button').allTextContents();
-    assert.deepEqual(labels.slice(0, 3), [projectTab, 'Mimari Simülatör', costTab]);
+    assert.deepEqual(labels.slice(0, 4), [projectTab, 'Mimari Simülatör', costTab, financialTab]);
     await nav('Mimari Simülatör').click();
+    await page.getByText('Lütfen işlem yapmak için üst menüden bir proje seçin', { exact: false }).waitFor();
+    await nav(financialTab).click();
     await page.getByText('Lütfen işlem yapmak için üst menüden bir proje seçin', { exact: false }).waitFor();
     await nav(projectTab).click();
     for (const [id, value] of Object.entries({ semt: 'Pafta Testi', mahalle: 'Örnek Mahalle', ada: '12', parsel: '34', kaks: '2', taks: '0.4', arsa_alani: '1000', bina_sayisi: '1', insaat_alani: '250', notlar: 'Yerel tarayıcı regresyonu' })) {
@@ -85,6 +88,8 @@ async function main() {
     await page.getByText('Proje kaydedildi.', { exact: true }).waitFor();
     const projectId = await page.locator('#active-project option').nth(1).getAttribute('value');
     await page.locator('#active-project').selectOption(projectId);
+    await nav(financialTab).click();
+    await page.getByText('Lütfen önce Mimari Simülatörden müteahhit payını belirleyin.').waitFor();
     await nav(costTab).click();
     for (const [label, amount] of [[/Daire.*Üst Yapı/, '200'], [/Toplam Yıkım/, '100'], [/Toplam Kira/, '200'], [/Proje, Harç/, '300']]) await page.getByLabel(label).fill(amount);
     await page.getByRole('button', { name: 'Maliyetleri Kaydet', exact: true }).click();
@@ -98,6 +103,7 @@ async function main() {
     assert.equal(await page.getByText(/1\.000,00/).count(), 2);
     console.log('Tarayıcı: proje oluşturma, bina doğrulaması ve modalı, daire metrajı, düzenleme ve iki maliyet modu geçti.');
     await simulator(page, nav, projectId, root);
+    await financial(page, nav, projectId, root);
     await nav(projectTab).click();
     await page.getByRole('button', { name: /Pafta Testi.*sil/ }).click();
     await page.getByText('Proje silindi.', { exact: true }).waitFor();
@@ -315,6 +321,114 @@ async function simulator(page, nav, projectId, root) {
   await assertPDF('mansard-kesit.pdf', 2);
   await page.emulateMedia({ media: 'screen' });
   console.log('Tarayıcı: çatı şekli ve kullanım kilitleri, metraj, tarama, kayıt ve dört PDF senaryosu geçti.');
+}
+
+async function financial(page, nav, projectId, root) {
+  const tab = 'Kâr/Zarar (Fizibilite)';
+  const projectSelect = page.locator('#active-project');
+  await nav('Proje Yönetimi').click();
+  await page.locator('#semt').fill('İkinci Finans Projesi');
+  await page.locator('#project-form').getByRole('button', { name: 'Kaydet', exact: true }).click();
+  await page.getByText('Proje kaydedildi.', { exact: true }).waitFor();
+  const secondId = await projectSelect.locator('option').filter({ hasText: 'İkinci Finans Projesi' }).getAttribute('value');
+  await nav('Mimari Simülatör').click();
+  const drawing = page.locator('.section-sheet:not(.section-print-page)');
+  const unit = page.getByRole('dialog', { name: 'Bağımsız Bölümü Düzenle' });
+  const hatch = unit.getByRole('checkbox', { name: 'Müteahhit Payı (Taralı Göster)', exact: true });
+  for (const id of ['normal-6:1', 'normal-6:2', 'normal-1:0', 'roof:0']) {
+    await drawing.locator(`[data-unit="${id}"]`).click();
+    const net = unit.getByLabel('Net alan (isteğe bağlı)', { exact: true });
+    await net.fill('65,25 m²');
+    await net.press('Tab');
+    assert.equal(await net.inputValue(), '65,25');
+    await unit.getByRole('button', { name: 'Uygula', exact: true }).click();
+  }
+  await nav(tab).click();
+  assert.equal(await page.locator('[data-financial-gross]').innerText(), '483,67 m²');
+  assert.equal(await page.locator('[data-financial-net]').innerText(), '261 m²');
+  assert.equal(await page.locator('[data-financial-expense="construction"]').getByText('1.000,00 TL').count(), 1);
+  const residential = page.getByLabel('Konut (Daire) Ortalama Satış m² Fiyatı', { exact: true });
+  await residential.fill('1500000');
+  await residential.press('Tab');
+  assert.equal(await residential.inputValue(), '1.500.000');
+  await residential.focus();
+  await residential.fill('20.000 TL/m²');
+  await residential.press('Tab');
+  assert.equal(await residential.inputValue(), '20.000');
+  const ownerHomes = page.getByLabel('Arsa Sahibi Daire Sayısı', { exact: true });
+  const automaticCount = Number(await ownerHomes.inputValue());
+  assert.ok(automaticCount > 2);
+  await ownerHomes.fill('2');
+  for (const [label, value] of [
+    ['Ticari (Dükkan) Ortalama Satış m² Fiyatı', '30.000'],
+    ['Aylık Kira Yardımı (Daire Başı)', '5.000 TL'],
+    ['Kira Süresi (Ay)', '3'],
+    ['Taşınma Yardımı (Daire Başı Tek Seferlik)', '10.000'],
+    ['Pazarlama ve Komisyon Gideri (%)', '%2,5'],
+    ['Finansman (Kredi/Faiz) Gideri (%)', '5,5'],
+    ['Beklenmeyen Giderler (Risk Payı) (%)', '10'],
+  ]) await page.getByLabel(label, { exact: true }).fill(value);
+  await page.getByRole('checkbox', { name: 'Ortalama fiyat kullan', exact: true }).uncheck();
+  const roofPrice = page.locator('[data-financial-unit="roof:0"]').getByRole('textbox');
+  await roofPrice.fill('1.500.000 TL');
+  await roofPrice.press('Tab');
+  assert.equal(await roofPrice.inputValue(), '1.500.000');
+  assert.equal(await page.locator('[data-financial-revenue]').innerText(), '11.183.333,33 TL');
+  assert.equal(await page.locator('[data-financial-cost]').innerText(), '338.488,33 TL');
+  assert.equal(await page.locator('[data-financial-profit]').innerText(), '10.844.845,00 TL');
+  await projectSelect.selectOption(secondId);
+  assert.equal(await residential.inputValue(), '');
+  assert.equal(await ownerHomes.inputValue(), '0');
+  await page.getByText('Lütfen önce Mimari Simülatörden müteahhit payını belirleyin.').waitFor();
+  await residential.fill('2.000');
+  await projectSelect.selectOption(projectId);
+  assert.equal(await residential.inputValue(), '20.000');
+  assert.equal(await ownerHomes.inputValue(), '2');
+  await nav('Mimari Simülatör').click();
+  await drawing.locator('[data-unit="roof:0"]').click();
+  await hatch.uncheck();
+  await unit.getByRole('button', { name: 'Uygula', exact: true }).click();
+  await nav(tab).click();
+  assert.equal(await page.locator('[data-financial-gross]').innerText(), '411,67 m²');
+  assert.equal(await page.locator('[data-financial-net]').innerText(), '195,75 m²');
+  assert.equal(await page.locator('[data-financial-revenue]').innerText(), '9.683.333,33 TL');
+  await nav('Mimari Simülatör').click();
+  assert.equal(await drawing.locator('[data-unit="roof:0"]').getAttribute('data-contractor-share'), 'false');
+  await drawing.locator('[data-unit="roof:0"]').click();
+  await hatch.check();
+  await unit.getByRole('button', { name: 'Uygula', exact: true }).click();
+  await page.getByRole('button', { name: 'Senaryoyu Kaydet', exact: true }).click();
+  await page.getByText('Senaryo kaydedildi.', { exact: true }).waitFor();
+  await nav(tab).click();
+  const rate = page.getByLabel('Pazarlama ve Komisyon Gideri (%)', { exact: true });
+  await rate.fill('101');
+  assert.equal(await rate.getAttribute('aria-invalid'), 'true');
+  const save = page.getByRole('button', { name: 'Senaryoyu Kaydet', exact: true });
+  await save.click();
+  assert.equal(await page.getByText('Finansal senaryo kaydedildi.', { exact: true }).count(), 0);
+  await rate.fill('%2,5');
+  await save.click();
+  await page.getByText('Finansal senaryo kaydedildi.', { exact: true }).waitFor();
+  await page.reload();
+  await nav(tab).click();
+  assert.equal(await roofPrice.inputValue(), '1.500.000');
+  assert.equal(await page.locator('[data-financial-net]').innerText(), '261 m²');
+  assert.equal(await page.locator('[data-financial-profit]').innerText(), '10.844.845,00 TL');
+  await page.screenshot({ path: path.join(root, 'finansal-pano.png'), fullPage: true });
+  await page.evaluate(() => { window.print = () => { window.__financePrint = true; }; });
+  await page.getByRole('button', { name: 'Yönetici Özeti (PDF İndir)', exact: true }).click();
+  assert.equal(await page.evaluate(() => window.__financePrint), true);
+  await page.emulateMedia({ media: 'print' });
+  assert.equal(await page.getByRole('navigation').isVisible(), false);
+  assert.equal(await residential.isVisible(), false);
+  const report = page.locator('.financial-report-page');
+  assert.match(await report.innerText(), /Ada 12 · Parsel 34/);
+  assert.match(await report.innerText(), /Yatırımın geri dönüşü \(ROI\)/);
+  assert.match(await report.innerText(), /Asdem Yapı - Finansal Ön Fizibilite Raporu/);
+  const pdf = await page.pdf({ printBackground: true, preferCSSPageSize: true, path: path.join(root, 'finansal-yonetici-ozeti.pdf') });
+  assert.equal((pdf.toString('latin1').match(/\/Type\s*\/Page\b/g) || []).length, 1);
+  await page.emulateMedia({ media: 'screen' });
+  console.log('Tarayıcı: finansal pano, proje ayrımı, canlı müteahhit payı, sayı formatı, senaryo kaydı ve A4 PDF geçti.');
 }
 
 async function editSheet(page) {

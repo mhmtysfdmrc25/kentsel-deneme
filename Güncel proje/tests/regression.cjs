@@ -7,9 +7,11 @@ const { spawn } = require('node:child_process');
 const net = require('node:net');
 const Database = require('better-sqlite3');
 const { simulate, emptyScenario, validateScenario } = require('../lib/scenario.ts');
-const { quickTotal, detailedTotal } = require('../lib/costs.ts');
+const { quickTotal, detailedTotal, savedQuickAid } = require('../lib/costs.ts');
 const { deriveSection, emptyDesign, validateDesign, validateSimulator } = require('../lib/simulator.ts');
 const { DEFAULT_RULE_SETTINGS, evaluateImarRules, locksFor, normalizeRuleSettings } = require('../lib/imarRules.ts');
+const { calculateFinancial, emptyFinancialScenario, financialInventory, validateFinancialScenario } = require('../lib/financial.ts');
+const { formatNumber, parseNumberInput } = require('../lib/number-format.ts');
 
 function testSection() {
   const parcel = { arsa_alani: 1000, taks: 0.4, kaks: 2 };
@@ -193,10 +195,70 @@ function testRoofUsage() {
   assert.equal(validateDesign({ ...design, duplex: true, rules: {} }).rules.roofUsage, 'duplex');
 }
 
+function testFinancial() {
+  const design = {
+    ...emptyDesign(), normalFloors: 1, basementFloors: 0,
+    units: {
+      'normal-1:0': { gross: 100, net: 80, isContractorShare: true },
+      'ground:0': { type: 'shop', gross: 60, net: 48, isContractorShare: true },
+    },
+  };
+  const project = {
+    arsa_alani: 1000, taks: 0.4, cost_mode: 'quick', quick_cost_data: JSON.stringify({ rent: 20000 }),
+    architectural_scenarios: JSON.stringify({ ...emptyScenario(), design }),
+  };
+  const inventory = financialInventory(project);
+  const includedAid = savedQuickAid(project, 520000);
+  assert.equal(includedAid, 20000);
+  assert.equal(savedQuickAid({ ...project, cost_mode: 'detailed' }, 520000), null);
+  assert.equal(inventory.ownerHomes, 2);
+  assert.equal(inventory.ownerUnits, 2);
+  const input = {
+    ...emptyFinancialScenario(), residentialRate: 10000, commercialRate: 20000, ownerHomes: 1,
+    monthlyRent: 4000, rentMonths: 10, movingAid: 5000, marketingRate: 2, financeRate: 10, riskRate: 5,
+  };
+  const result = calculateFinancial(input, inventory, 520000, includedAid);
+  assert.equal(result.revenue, 2200000);
+  assert.equal(result.totalCost, 670750);
+  assert.equal(result.profit, 1529250);
+  assert.equal(result.margin, 1529250 / 2200000 * 100);
+  assert.equal(result.roi, 1529250 / 670750 * 100);
+  assert.deepEqual(result.expenseLines.map(expense => expense.amount), [500000, 40000, 5000, 44000, 54500, 27250]);
+  assert.deepEqual([result.grossArea, result.netArea, result.residentialArea, result.commercialArea], [160, 128, 100, 60]);
+  assert.equal(calculateFinancial(emptyFinancialScenario(), inventory, 520000, includedAid).totalCost, 520000);
+  assert.equal(calculateFinancial({ ...input, ownerHomes: null }, inventory, 520000, includedAid).ownerHomes, 2);
+  assert.equal(calculateFinancial({ ...input, rentMonths: null }, inventory, 520000, includedAid).totalCost, null);
+  const custom = calculateFinancial({ ...input, useAveragePrices: false, unitPrices: { 'normal-1:0': 0, 'roof:0': 999 } }, inventory, 520000, includedAid);
+  assert.equal(custom.revenue, 1200000);
+  const zero = calculateFinancial({ ...emptyFinancialScenario(), residentialRate: 0, commercialRate: 0 }, inventory, 100, null);
+  assert.equal(zero.profit, -100);
+  assert.equal(zero.margin, null);
+  assert.equal(zero.roi, -100);
+  assert.equal(calculateFinancial(input, inventory, null, null).profit, null);
+  const changed = financialInventory(project, { ...emptyScenario(), design: { ...design, units: {} } });
+  assert.equal(calculateFinancial(input, changed, 520000, includedAid).revenue, null);
+  assert.equal(financialInventory({}).contractorUnits.length, 0);
+  assert.throws(() => validateFinancialScenario({ rentMonths: 2.5 }), /adetleri/);
+  assert.throws(() => validateFinancialScenario({ financeRate: 101 }), /yüzdeleri/);
+  assert.throws(() => validateFinancialScenario({ unitPrices: { invalid: 1 } }), /bölüm fiyatı/);
+  for (const [entered, unit, max, integer, expected] of [
+    ['1.500.000 TL', 'TL', 2000000, false, 1500000],
+    ['₺1.500,50', 'TL', 2000, false, 1500.5],
+    ['20.000,75 TL/m²', 'TL/m²', 50000, false, 20000.75],
+    ['%2,5', '%', 100, false, 2.5],
+    ['65,25 m²', 'm²', 1000, false, 65.25],
+    ['65.25', 'm²', 1000, false, 65.25],
+    ['2,5', 'Ay', 100, true, undefined],
+    ['101', '%', 100, false, undefined],
+  ]) assert.equal(parseNumberInput(entered, unit, max, integer), expected);
+  assert.equal(formatNumber(1500000), '1.500.000');
+}
+
 async function main() {
   testSection();
   testRuleSection();
   testRoofUsage();
+  testFinancial();
   const input = { arsa_alani: 1000, taks: 0.4, kaks: 2, daire_sayisi: 31, dukkan_sayisi: 1, insaat_alani: 1600, binalar_detay: JSON.stringify([{ daire_sayisi: 31, dukkan_sayisi: 1, normal_kat: 8, bodrum_kat: 1, giriste_daire_yok: false }]) };
   const test = simulate(input, { ...emptyScenario(), bonus: true, slope: true, exposedFloors: 2, narrow: true, heightLimit: true });
   assert.equal(test.kaksArea, 2000); assert.equal(test.gross, 2600); assert.equal(test.slopeArea, 800);
@@ -229,6 +291,7 @@ async function main() {
     for (let i = 0; i < 100; i++) { try { await fetch(base); ready = true; break; } catch { if (server.exitCode !== null) break; await new Promise(resolve => setTimeout(resolve, 100)); } }
     if (!ready) throw new Error('Test sunucusu başlatılamadı: ' + output);
     let [, existing] = await call(); assert.equal(existing[0].semt, 'Eski'); assert.equal(existing[0].architectural_scenarios, null);
+    assert.equal(existing[0].financial_scenarios, null);
     const building = { ad: 'A', daire_sayisi: 2, dukkan_sayisi: 0, bodrum_kat: 0, normal_kat: 1, esit_dagilim: false, kat_daireleri: [1, 1], bodrumda_daire_yok: true, bodrum_daireleri: [], giriste_daire_yok: false };
     const floor = id => ({ id, ortak_alan: 10, daireler: [{ net: 50, brut: 60 }] });
     const measure = { binalar: [{ bina_index: 0, katlar: [floor('normal-0'), floor('normal-1')] }] };
@@ -279,7 +342,7 @@ async function main() {
         ...sectionScenario.design.units,
         'ground:0': { type: 'shop', isContractorShare: false },
         'ground:1': { isContractorShare: true },
-        'roof:0': { isContractorShare: true, gross: 90 },
+        'roof:0': { isContractorShare: true, gross: 90, net: 75 },
       },
     };
     [status, saved] = await call(`/${id}/scenario`, 'PUT', { ...scenario, design: ruleDesign });
@@ -289,6 +352,7 @@ async function main() {
     assert.equal(persisted.design.rules.roofShape, 'mansard');
     assert.equal(persisted.design.rules.roofUsage, 'independent');
     assert.equal(persisted.design.units['roof:0'].isContractorShare, true);
+    assert.equal(persisted.design.units['roof:0'].net, 75);
     assert.equal(persisted.design.rules.mezzanine, false);
     assert.equal(persisted.design.rules.sideProjection, false);
     assert.equal(persisted.design.rules.sideGarden, false);
@@ -296,6 +360,16 @@ async function main() {
     assert.equal(persisted.design.units['ground:1'].isContractorShare, true);
     assert.equal(saved.cost_mode, 'quick');
     assert.equal(JSON.parse(saved.daire_metraj_detaylari).toplam_genel_brut, 200);
+    const financial = validateFinancialScenario({ residentialRate: 55000, rentMonths: 12, useAveragePrices: false, unitPrices: { 'roof:0': 2000000 } });
+    [status, saved] = await call(`/${id}/financial`, 'PUT', financial);
+    assert.equal(status, 200);
+    assert.deepEqual(JSON.parse(saved.financial_scenarios), financial);
+    assert.deepEqual(JSON.parse(saved.architectural_scenarios), persisted);
+    assert.equal(saved.cost_mode, 'quick');
+    [status] = await call(`/${id}/financial`, 'PUT', { riskRate: -1 });
+    assert.equal(status, 400);
+    [status] = await call('/999999/financial', 'PUT', financial);
+    assert.equal(status, 404);
     [status] = await call(`/${id}/scenario`, 'PUT', { ...scenario, design: { ...ruleDesign, units: { 'ground:0': { isContractorShare: 'false' } } } });
     assert.equal(status, 400);
     [status, saved] = await call(`/${id}/scenario`, 'PUT', scenario);
@@ -307,9 +381,10 @@ async function main() {
     [status, existing] = await call();
     assert.equal(status, 200);
     assert.deepEqual(JSON.parse(existing.find(row => row.id === id).architectural_scenarios), persisted);
+    assert.deepEqual(JSON.parse(existing.find(row => row.id === id).financial_scenarios), financial);
     [status] = await call('', 'POST', { bina_sayisi: 1, binalar_detay: [{ ...building, daire_sayisi: 3 }] }); assert.equal(status, 400);
     [status] = await call(`/${id}`, 'DELETE'); assert.equal(status, 204);
-    console.log('Simülasyon, imar kuralları, pay dağılımı, eski senaryo geçişi, metraj, maliyet ve proje CRUD kontrolleri başarılı.');
+    console.log('Simülasyon, imar kuralları, pay dağılımı, finansal hesap ve kayıt, metraj, maliyet ve proje CRUD kontrolleri başarılı.');
   } finally { server.kill('SIGTERM'); }
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });
