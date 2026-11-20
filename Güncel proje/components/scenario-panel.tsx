@@ -229,6 +229,8 @@ export function ScenarioPanel({ project }: { project: Project }) {
         {calculations.footprint === null && calculations.netEmsal === null && calculations.regimeArea === null && <p className="mt-2 text-sm text-[#536c64]">Otomatik kat alanları için Proje Yönetimi’nde arsa alanı ve TAKS veya KAKS girin. Kat alanlarını paftadan elle de girebilirsiniz.</p>}
       </div>
 
+      <SectionSheet project={project} design={design} section={section} report={report} sloped={scenario.slope} onUnit={busy ? undefined : (unit, floor) => setEditing({ unit, floor })} onFloor={busy ? undefined : floor => setEditing({ floor })} />
+
       <div className="space-y-3 rounded-2xl border border-[#dfe9e4] bg-white p-5 shadow-sm">
         <h2 className="text-lg font-semibold">Mevzuat ve Risk Analizi</h2>
         {categories.map(category => <section key={category}>
@@ -241,7 +243,6 @@ export function ScenarioPanel({ project }: { project: Project }) {
         </section>)}
       </div>
 
-      <SectionSheet project={project} design={design} section={section} report={report} sloped={scenario.slope} onUnit={busy ? undefined : (unit, floor) => setEditing({ unit, floor })} onFloor={busy ? undefined : floor => setEditing({ floor })} />
       <SectionSheet project={project} design={design} section={section} report={report} sloped={scenario.slope} includeNotes={includeNotes} print />
     </section>
 

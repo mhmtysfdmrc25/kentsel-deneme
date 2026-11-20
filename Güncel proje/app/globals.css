@@ -78,16 +78,18 @@ button:focus-visible { outline: 2px solid #1b6258; outline-offset: 3px; }
   .section-print-page .section-sheet-heading {
     flex-wrap: nowrap;
     align-items: center;
-    gap: 0;
+    gap: 2mm;
     justify-content: space-between;
     border-color: #223f8e;
     color: #223f8e;
+    font-weight: 700;
+    line-height: 1.25;
   }
   .section-print-page .section-sheet-heading > div:first-child {
     display: contents;
   }
-  .section-print-page .section-sheet-heading h3 { font-size: 11pt; white-space: nowrap; }
-  .section-print-page .section-sheet-heading p { margin: 0; font-size: 9pt; white-space: nowrap; }
+  .section-print-page .section-sheet-heading h3 { font-size: 12pt; white-space: nowrap; }
+  .section-print-page .section-sheet-heading p { margin: 0; font-size: 10pt; white-space: nowrap; }
   .section-print-page .section-sheet-heading > div:first-child p { min-width: 0; max-width: 100mm; overflow: hidden; text-overflow: ellipsis; }
   .section-print-page .section-sheet-content { grid-template-columns: minmax(0, 1fr) 54mm; gap: 4mm; }
   .section-print-page .section-sheet-content:has(.section-compact-summary) { grid-template-columns: minmax(0, 1fr) 104mm; }
@@ -114,7 +116,7 @@ button:focus-visible { outline: 2px solid #1b6258; outline-offset: 3px; }
   .section-company-logo { position: absolute; left: 50%; bottom: 0; transform: translateX(-50%); width: 105mm; height: 18mm; overflow: hidden; }
   .section-company-logo img { position: absolute; width: 140%; max-width: none; height: auto; left: -34%; top: 50%; transform: translateY(-50%); }
   .section-notes-page .section-sheet-heading { gap: 3mm; }
-  .section-notes-page .section-sheet-heading h3 { font-size: 9.5pt; white-space: normal; max-width: 67mm; }
+  .section-notes-page .section-sheet-heading h3 { font-size: 11pt; white-space: normal; max-width: 67mm; }
   .section-notes-page .section-print-footer { bottom: 10mm; }
   .section-notes-body { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 8mm; font-size: 8pt; line-height: 1.22; }
   .section-notes-body h4 { border-bottom: 1px solid #000; padding-bottom: 1mm; margin: 0 0 1.3mm; font-size: 10pt; font-weight: 700; }

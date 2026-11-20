@@ -124,6 +124,8 @@ async function simulator(page, nav, projectId, root) {
   await page.getByLabel('Kattaki Sütun (Daire) Sayısı', { exact: true }).fill('3');
   assert.equal(await page.getByLabel('Senaryo ve Yeni Bina Ayarları').locator('details').count(), 7);
   const drawing = page.locator('.section-sheet:not(.section-print-page)');
+  const riskHeading = page.getByRole('heading', { name: 'Mevzuat ve Risk Analizi', exact: true });
+  assert.ok((await drawing.boundingBox()).y < (await riskHeading.boundingBox()).y);
   await openGroup('Yapı Nizamı & Bahçe');
   const buildingOrder = page.getByLabel('Yapı nizamı');
   await buildingOrder.selectOption('attached');
@@ -233,6 +235,14 @@ async function simulator(page, nav, projectId, root) {
   assert.equal(await notesPage.locator('.section-company-logo img').count(), 1);
   assert.match(await printSheet.locator('.section-contact').innerText(), /www\.asdemyapi\.com/);
   assert.match(await printSheet.locator('.section-contact').innerText(), /\+90 \(532\) 664 47 25/);
+  for (const sheet of [printSheet, notesPage]) {
+    const headerText = await sheet.locator('.section-sheet-heading :is(h3, p)').evaluateAll(items => items.map(item => {
+      const style = getComputedStyle(item);
+      return { weight: Number(style.fontWeight), size: parseFloat(style.fontSize) };
+    }));
+    assert.equal(headerText.length, 6);
+    assert.ok(headerText.every(({ weight, size }) => weight >= 700 && size >= 13));
+  }
   const headerLayout = await printSheet.locator('.section-sheet-heading').evaluate(header => {
     const items = [...header.querySelectorAll('h3, p')].map(item => item.getBoundingClientRect());
     return { tops: items.map(item => item.top), gaps: items.slice(1).map((item, i) => item.left - items[i].right), color: getComputedStyle(header).color, line: getComputedStyle(header).borderBottomColor, overflow: header.scrollWidth > header.clientWidth };
