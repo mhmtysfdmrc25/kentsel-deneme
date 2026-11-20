@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, type ReactNode } from 'react';
-import type { RuleSettings, locksFor } from '@/lib/imarRules';
+import { ruleLabels, type RuleSettings, type locksFor } from '@/lib/imarRules';
 import type { Scenario } from '@/lib/scenario';
-import { defaultHeading, MAX_SECTION_COLUMNS, MAX_SECTION_FLOORS, MAX_SECTION_HEADING_LENGTH, type BuildingDesign, type SectionFloor } from '@/lib/simulator';
+import { defaultHeading, MAX_SECTION_AREA, MAX_SECTION_COLUMNS, MAX_SECTION_FLOORS, MAX_SECTION_HEADING_LENGTH, type BuildingDesign, type SectionFloor } from '@/lib/simulator';
 
 type Lock = { disabled: boolean; reason: string };
 type Locks = ReturnType<typeof locksFor>;
@@ -14,7 +14,7 @@ export const useLabels = { residential: 'Konut', 'ground-commercial': 'Zemin Tic
 export const orderLabels = { detached: 'Ayrık Nizam', attached: 'Bitişik Nizam', block: 'Blok / İkiz' } as const;
 export const regimeLabels = { kaks: 'KAKS Esaslı', taks: 'TAKS × Kat Adedi', block: 'Blok Ebatı' } as const;
 export const projectionLabels = { none: 'Çıkma Yok', open: 'Açık Çıkma', closed: 'Kapalı Çıkma', mixed: 'Açık + Kapalı Karma', column: 'Kolonlu Arka/Ön Genişleme' } as const;
-export const roofLabels = { void: 'Çatı Boşluğu (Ortak/Kullanımsız)', duplex: 'Çatı Arası Piyesi (Son Kat Dubleks)', mansard: 'Mansard (Kırık) Çatı', terrace: 'Teras / Yeşil Çatı' } as const;
+const roofUsageOptions = { cold: ruleLabels.roofUsage.cold, duplex: ruleLabels.roofUsage.duplex, independent: ruleLabels.roofUsage.independent };
 export const geologyLabels = { standard: 'Standart', oa1: 'OA1 · 4–5 kat senaryosu', oa2: 'OA2 · 2 kat senaryosu', 'oa3-5': 'OA3–OA5 · 3 kat senaryosu', je: 'JE / Afete Maruz' } as const;
 
 export function getParameterRows(rules: RuleSettings, scenario: Scenario, design: BuildingDesign): [string, string][] {
@@ -25,7 +25,8 @@ export function getParameterRows(rules: RuleSettings, scenario: Scenario, design
     ['Yapı nizamı', orderLabels[rules.order]],
     ['İmar rejimi', regimeLabels[rules.regime]],
     ['Çıkma tipi', projectionLabels[rules.projection]],
-    ['Çatı tipi', roofLabels[rules.roof]],
+    ['Çatı şekli', ruleLabels.roofShape[rules.roofShape]],
+    ['Çatı kullanımı', ruleLabels.roofUsage[rules.roofUsage]],
     ['Zemin kurgusu', [`Subasman +${areaFormat.format(rules.subasman)} m`, rules.noGroundResidence && 'Konut yok', rules.mezzanine && 'Asma kat', rules.portico && 'Portik'].filter(Boolean).join(' · ')],
     ['Bodrum / eğim', [`${design.basementFloors} bodrum`, scenario.slope ? `Eğimli · ${scenario.exposedFloors ?? 0} kat açıkta` : 'Düz arazi', rules.stepped && 'Kademeli', design.serviceBasement && design.basementFloors > 0 && 'Tek parça alt bodrum'].filter(Boolean).join(' · ')],
     ['Jeoloji ve özel kısıtlar', [geologyLabels[rules.geology], selected].filter(Boolean).join(' · ')],
@@ -172,8 +173,14 @@ export function ImarControls({ design, scenario, rules, locks, floors, busy, upd
       {rules.projection === 'column' && <p className="text-xs text-[#536c64]">Duvarla kapatmadan ve 1 m sınırını aşmadan tasarlayın.</p>}
     </Group>
     <Group title="Çatı, Son Kat & Özel Kısıtlar">
-      <Radios label="Çatı tipi" name="roof" options={roofLabels} value={rules.roof} onChange={roof => updateRules({ roof })} />
-      <p className="text-xs text-[#536c64]">Bu kesitte çatı piyesi son kata bağlıdır. Bağımsız bölüm oluşturulmaz.</p>
+      <Radios label="Çatı Şekli" name="roof-shape" options={ruleLabels.roofShape} value={rules.roofShape} onChange={roofShape => updateRules({ roofShape })} />
+      {!locks.roofUsage.disabled && <Radios label="Çatı Kullanımı" name="roof-usage" options={roofUsageOptions} value={rules.roofUsage === 'none' ? 'cold' : rules.roofUsage} onChange={roofUsage => updateRules({ roofUsage })} locks={{ duplex: locks.roofDuplex, independent: locks.roofIndependent }} />}
+      {rules.roofUsage === 'duplex' && <NumberField label="Çatı Piyesi Toplam Brüt Alanı (m²)" value={design.floorAreas.roof ?? null} optional step="any" max={MAX_SECTION_AREA} onChange={area => {
+        const floorAreas = { ...design.floorAreas };
+        if (area === null) delete floorAreas.roof;
+        else floorAreas.roof = area;
+        updateDesign({ floorAreas });
+      }} />}
       <Choice label="Jeolojik bölge" value={rules.geology} options={geologyLabels} onChange={geology => updateRules({ geology })} />
       <Check checked={scenario.narrow} onChange={narrow => updateScenario({ narrow })}>Dar Arsa / Çekme Mesafesi Kısıtı</Check>
       <Check checked={scenario.heightLimit} onChange={heightLimit => updateScenario({ heightLimit })}>YENÇOK (Maksimum Yükseklik) Sınırı</Check>

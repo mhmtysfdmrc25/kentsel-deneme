@@ -15,7 +15,7 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
       const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(Number(id)) as Project | undefined;
       if (!project) return NextResponse.json({ error: 'Proje bulunamadı.' }, { status: 404 });
       const rules = normalizeRuleSettings(project, scenario.design, scenario.design.rules, scenario);
-      scenario = { ...scenario, design: { ...scenario.design, rules } };
+      scenario = { ...scenario, design: { ...scenario.design, rules, duplex: rules.roofUsage === 'duplex' } };
     }
     const result = db.prepare(
       `UPDATE projects SET architectural_scenarios = CASE

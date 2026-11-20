@@ -7,7 +7,8 @@ export const ruleLabels = {
   order: { detached: 'Ayrık', attached: 'Bitişik', block: 'Blok / İkiz' },
   regime: { kaks: 'KAKS Esaslı', taks: 'TAKS × Kat Adedi', block: 'Blok Ebatı' },
   projection: { none: 'Çıkma Yok', open: 'Açık Çıkma', closed: 'Kapalı Çıkma', mixed: 'Açık + Kapalı Karma', column: 'Kolonlu Arka/Ön Genişleme' },
-  roof: { void: 'Çatı Boşluğu (Ortak/Kullanımsız)', duplex: 'Çatı Arası Piyesi (Son Kat Dubleks)', mansard: 'Mansard (Kırık) Çatı', terrace: 'Teras / Yeşil Çatı' },
+  roofShape: { pitched: 'Eğimli Çatı (Kırma / Beşik)', mansard: 'Mansard Çatı', terrace: 'Teras / Yeşil Çatı' },
+  roofUsage: { none: '—', cold: 'Kör Çatı (Soğuk Çatı / Kullanımsız)', duplex: 'Son Kat ile Bağlantılı Dubleks (Piyes)', independent: 'Bağımsız Çatı Katı Dairesi' },
   geology: { standard: 'Standart', oa1: 'OA1 (4–5 kat)', oa2: 'OA2 (2 kat)', 'oa3-5': 'OA3–OA5 (3 kat)', je: 'JE / Afete Maruz' },
 } as const;
 
@@ -27,7 +28,8 @@ export type RuleSettings = {
   noGroundResidence: boolean;
   stepped: boolean;
   projection: Choice<'projection'>;
-  roof: Choice<'roof'>;
+  roofShape: Choice<'roofShape'>;
+  roofUsage: Choice<'roofUsage'>;
   geology: Choice<'geology'>;
   flood: boolean;
   infrastructure: boolean;
@@ -46,11 +48,11 @@ export type RuleSettings = {
 export const DEFAULT_RULE_SETTINGS: Readonly<RuleSettings> = {
   use: 'residential', order: 'detached', frontGarden: true, sideGarden: true, rearGarden: true,
   regime: 'kaks', isolation: false, subasman: 0, mezzanine: false, portico: false,
-  noGroundResidence: false, stepped: false, projection: 'none', roof: 'void',
+  noGroundResidence: false, stepped: false, projection: 'none', roofShape: 'pitched', roofUsage: 'cold',
   geology: 'standard', flood: false, infrastructure: false, solidFuel: false,
 };
 
-const choices = ['use', 'order', 'regime', 'projection', 'roof', 'geology'] as const;
+const choices = ['use', 'order', 'regime', 'projection', 'roofShape', 'roofUsage', 'geology'] as const;
 const requiredFlags = ['frontGarden', 'sideGarden', 'rearGarden', 'isolation', 'mezzanine', 'portico', 'noGroundResidence', 'stepped', 'flood', 'infrastructure', 'solidFuel'] as const;
 const optionalFlags = ['sideProjection', 'basementOpenings', 'basementParking'] as const;
 const measurements = ['blockWidth', 'blockDepth', 'siteElevationDelta', 'floodCrest', 'basementOpeningElevation', 'totalBuriedTechnicalArea'] as const;
@@ -64,10 +66,14 @@ function setChoice<K extends ChoiceKey>(output: RuleSettings, key: K, value: unk
   output[key] = validateChoice(key, value);
 }
 
-export function validateRuleSettings(value: unknown): RuleSettings {
+export function validateRuleSettings(value: unknown, legacyDuplex = false): RuleSettings {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error('Geçersiz imar senaryosu.');
   const data = value as Record<string, unknown>;
   const output: RuleSettings = { ...DEFAULT_RULE_SETTINGS };
+  // Eski kayıtlar şekil ve kullanımı tek alanda, daha eski kayıtlar yalnızca dubleks bayrağında tutuyordu.
+  if (data.roof === 'mansard' || data.roof === 'terrace') output.roofShape = data.roof;
+  if (data.roof === 'duplex' || (data.roof === undefined && legacyDuplex)) output.roofUsage = 'duplex';
+  if (data.roof === 'terrace') output.roofUsage = 'none';
   for (const key of choices) {
     if (data[key] !== undefined) setChoice(output, key, data[key]);
   }
@@ -140,9 +146,15 @@ export function locksFor(project: Project, design: BuildingDesign, settings: Rul
   const ground = hasGroundTrade(design, settings);
   const attached = settings.order === 'attached';
   const commercial = settings.use === 'commercial' ? 'Seçilen kullanım fonksiyonu tamamen ticarettir.' : undefined;
+  const terrace = settings.roofShape === 'terrace' ? 'Teras çatıda kapalı çatı arası kullanımı seçilmez.' : undefined;
   const flatFirst = !scenario.slope && settings.subasman < 1
     ? 'İİY m. 18 ve PAİY m. 51 · Düz arazide 1. bodrum konutu için simülatörün +1,00 m subasman ön koşulu sağlanmıyor.' : undefined;
   return {
+    roofUsage: lock(terrace),
+    roofIndependent: lock(terrace ?? (settings.roofShape !== 'mansard'
+      ? 'PAİY Md. 40/7: Eğimli çatı arasına bağımsız bölüm (daire) yapılamaz.' : commercial)),
+    roofDuplex: lock(terrace ?? commercial ?? (design.normalFloors === 0 && (!design.ground || settings.noGroundResidence || settings.use === 'ground-commercial')
+      ? 'Çatı piyesi için bağlantı kurulabilecek bir konut katı gerekir.' : undefined)),
     projectionClosed: lock(closed),
     projectionMixed: lock(closed),
     projectionColumn: lock(column),
@@ -169,8 +181,12 @@ export function normalizeRuleSettings(project: Project, design: BuildingDesign, 
   let projection = settings.projection;
   if ((projection === 'closed' && locks.projectionClosed.disabled) || (projection === 'mixed' && locks.projectionMixed.disabled)) projection = 'open';
   if (projection === 'column' && locks.projectionColumn.disabled) projection = 'none';
+  let roofUsage = settings.roofUsage;
+  if (locks.roofUsage.disabled) roofUsage = 'none';
+  else if (roofUsage === 'none' || (roofUsage === 'independent' && locks.roofIndependent.disabled) ||
+    (roofUsage === 'duplex' && locks.roofDuplex.disabled)) roofUsage = 'cold';
   return {
-    ...settings, projection,
+    ...settings, projection, roofUsage,
     mezzanine: settings.mezzanine && !locks.mezzanine.disabled,
     portico: settings.portico && !locks.portico.disabled,
     sideGarden: settings.sideGarden && !locks.sideGarden.disabled,
@@ -221,7 +237,8 @@ export function evaluateImarRules(project: Project, design: BuildingDesign, sect
   const parcelArea = numeric(project.arsa_alani);
   const netEmsal = multiply(parcelArea, project.kaks);
   const footprint = multiply(parcelArea, project.taks);
-  const planFloors = design.normalFloors + Number(design.ground);
+  const independentRoof = section.floors.find(floor => floor.kind === 'roof' && floor.units.length > 0);
+  const planFloors = design.normalFloors + Number(design.ground) + Number(Boolean(independentRoof));
   const blockArea = multiply(settings.blockWidth, settings.blockDepth);
   const regimeArea = settings.regime === 'block' ? multiply(blockArea, planFloors)
     : settings.regime === 'taks' ? multiply(footprint, planFloors) : netEmsal;
@@ -237,10 +254,10 @@ export function evaluateImarRules(project: Project, design: BuildingDesign, sect
   const setbackIncrease = Math.max(0, planFloors + (exposedBasements ?? 0) - 4) * 0.5;
   const nationalSetbackIncrease = setbackIncrease;
   const exemptArea = settings.totalBuriedTechnicalArea ?? null;
-  const estimatedEmsalUse = section.totalArea === null ? null : Math.max(0, section.totalArea - (exemptArea ?? 0));
+  const estimatedEmsalUse = section.totalArea === null ? null : Math.max(independentRoof?.area ?? 0, section.totalArea - (exemptArea ?? 0));
   const emsalExcess = estimatedEmsalUse === null || bonusArea === null ? null : Math.max(0, estimatedEmsalUse - bonusArea);
 
-  const floors = section.floors.filter(floor => floor.kind !== 'roof');
+  const floors = section.floors;
   const buriedTechnicalArea = scenario.slope && exposedBasements === null ? null : sumArea(floors
     .filter(floor => floor.kind === 'basement' && Number(floor.id.slice('basement-'.length)) > (exposedBasements ?? 0))
     .map(floor => floor.service ? floor.area : sumArea(floor.units.filter(unit => unit.type === 'parking' || unit.type === 'storage').map(unit => unit.gross))));
@@ -254,7 +271,7 @@ export function evaluateImarRules(project: Project, design: BuildingDesign, sect
   const contractor = share(shares.filter(unit => unit.isContractorShare), shareArea);
   const eligibleBasements = floors.filter(floor => floor.kind === 'basement' && (floor.service || floor.units.length > 0)).length;
   const includedFloors = planFloors + eligibleBasements;
-  const upperDwellings = floors.filter(floor => floor.kind === 'normal').flatMap(floor => floor.units).filter(isDwelling).length;
+  const upperDwellings = floors.filter(floor => floor.kind === 'normal' || floor.kind === 'roof').flatMap(floor => floor.units).filter(isDwelling).length;
 
   const legalNotes: LegalNote[] = [];
   function note(id: string, category: string, severity: LegalNote['severity'], message: string, source?: string) {
@@ -365,9 +382,14 @@ export function evaluateImarRules(project: Project, design: BuildingDesign, sect
   if (treeCount !== null) {
     note('tree', 'Bahçe ve peyzaj', 'info', `Açık bahçe tahmini, her ${treeInterval} m² için 1 ağaç varsayımıyla ${treeCount} ağaç veriyor. Parselin yürürlükteki plan notuyla doğrulayın.`, avcilar ? imarSources.avcilar : imarSources.paiy);
   }
-  note('roof', 'Çatı', 'info', avcilar
-    ? 'Simülatör çatı piyesini son kata bağlar. Bağımsız çatı katı için Avcılar’ın onaylı 1/1000 çatı plan notunun kapsadığı parselleri kontrol edin.'
-    : 'PAİY m. 40 · Çatı piyesi son kattaki bağımsız bölüme bağlıdır. Çatı biçimi ve kullanımı için parselin yürürlükteki plan notunu kontrol edin.', avcilar ? imarSources.avcilarRoof : imarSources.paiy);
+  if (settings.roofUsage === 'independent') {
+    note('roof-independent', 'Çatı', 'warning', 'Genel İmar Yönetmeliğinde çatı arasına bağımsız bölüm yapılamaz (PAİY Md. 40/7). Mansard çatıda bağımsız daire senaryosu, parselin yürürlükteki imar planı notlarındaki istisnalara tabidir.', imarSources.paiy);
+    if (avcilar) note('roof-avcilar', 'Çatı', 'info', 'Avcılar 1/1000 çatı plan notunun parseli kapsayıp kapsamadığını yetkili idareden doğrulayın.', imarSources.avcilarRoof);
+  } else if (settings.roofUsage === 'cold') {
+    note('roof-cold', 'Çatı', 'info', 'Çatı boşluğu ortak alandır, iskâna veya eklentiye konu edilemez.', imarSources.paiy);
+  } else if (settings.roofUsage === 'duplex') {
+    note('roof-duplex', 'Çatı', 'info', 'PAİY Md. 40/7 · Çatı piyesi son kattaki bağımsız bölüme bağlıdır. Piyesin ölçülerini ve çatı eğimi içinde kaldığını projede doğrulayın.', imarSources.paiy);
+  }
   if (scenario.bonus || exemptArea !== null) {
     note('exemptions', 'İmar hesabı', 'info', 'PAİY m. 5/8 ve İİY m. 22 · %30 havuz yalnızca uygun kalemler içindir. Beyan edilen gömülü/teknik alanların havuz dışı tutulabilmesi için kapsamı ayrı ayrı doğrulayın.', imarSources.iiy);
   }

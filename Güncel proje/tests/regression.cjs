@@ -80,7 +80,7 @@ function testRuleSection() {
   const rules = {
     ...DEFAULT_RULE_SETTINGS,
     use: 'ground-commercial', order: 'attached', frontGarden: false, sideProjection: true,
-    projection: 'closed', roof: 'mansard', mezzanine: true, portico: true,
+    projection: 'closed', roofShape: 'mansard', mezzanine: true, portico: true,
   };
   const design = {
     ...emptyDesign(), normalFloors: 7, contractorFloors: ['ground'], rules,
@@ -89,7 +89,7 @@ function testRuleSection() {
   const section = deriveSection(parcel, scenario, design);
   const floor = id => section.floors.find(value => value.id === id);
   assert.equal(section.projection, 'open');
-  assert.equal(section.roof, 'mansard');
+  assert.equal(section.roofShape, 'mansard');
   assert.equal(floor('roof').units.length, 0);
   assert.equal(floor('ground').units[0].type, 'shop');
   assert.equal(floor('ground').units[0].isContractorShare, false);
@@ -142,9 +142,61 @@ function testRuleSection() {
   assert.throws(() => validateDesign({ ...design, units: { 'ground:0': { isContractorShare: 'true' } } }), /Kesit seçimleri/);
 }
 
+function testRoofUsage() {
+  const parcel = { semt: 'Avcılar', arsa_alani: 1000, taks: 0.4, kaks: 1 };
+  const scenario = emptyScenario();
+  const design = {
+    ...emptyDesign(),
+    normalFloors: 1, basementFloors: 1, contractorFloors: ['roof'],
+    floorAreas: { roof: 120, 'basement-1': 80 },
+    units: { 'roof:0': { gross: 73, isContractorShare: false } },
+  };
+  const withRoof = (roofShape, roofUsage) => validateDesign({ ...design, rules: { roofShape, roofUsage } });
+  const derive = draft => deriveSection(parcel, scenario, draft);
+  const cold = derive(withRoof('mansard', 'cold'));
+  assert.equal(cold.floors[0].area, 0);
+  assert.equal(cold.floors[0].label, 'ÇATI BOŞLUĞU');
+  assert.equal(cold.totalArea, 880);
+
+  for (const roofShape of ['pitched', 'mansard']) {
+    const duplex = derive(withRoof(roofShape, 'duplex'));
+    assert.equal(duplex.totalUnits, cold.totalUnits);
+    assert.equal(duplex.floors[1].area, 400);
+    assert.deepEqual(duplex.floors[1].units.map(unit => [unit.roofArrow, unit.gross, unit.totalGross]), [[true, 260, 280], [true, 260, 280]]);
+    assert.equal(duplex.totalArea, 1000);
+  }
+  const independentDesign = withRoof('mansard', 'independent');
+  const independent = derive(independentDesign);
+  assert.equal(independent.totalUnits, cold.totalUnits + design.columns);
+  assert.equal(independent.totalFloors, cold.totalFloors + 1);
+  assert.equal(independent.floors[0].area, 133);
+  assert.equal(independent.floors[0].label, 'ÇATI KATI');
+  assert.deepEqual(independent.floors[0].units.map(unit => [unit.gross, unit.isContractorShare]), [[73, false], [60, true]]);
+  const report = evaluateImarRules(parcel, independentDesign, independent, independentDesign.rules, scenario);
+  assert.equal(report.calculations.estimatedEmsalUse, 1013);
+  assert.equal(report.calculations.emsalExcess, 13);
+  assert.equal(report.calculations.contractor.area, 60);
+  assert.ok(report.legalNotes.some(note => note.id === 'roof-independent' && note.severity === 'warning'));
+  assert.equal(derive(withRoof('terrace', 'duplex')).roofUsage, 'none');
+  const pitched = withRoof('pitched', 'independent');
+  assert.match(locksFor(parcel, pitched, pitched.rules, scenario).roofIndependent.reason, /40\/7/);
+  assert.equal(derive(pitched).roofUsage, 'cold');
+
+  for (const [oldRoof, shape, usage] of [
+    ['void', 'pitched', 'cold'], ['duplex', 'pitched', 'duplex'],
+    ['mansard', 'mansard', 'cold'], ['terrace', 'terrace', 'none'],
+  ]) {
+    const migrated = validateDesign({ ...design, rules: { roof: oldRoof } });
+    assert.equal(migrated.rules.roofShape, shape);
+    assert.equal(migrated.rules.roofUsage, usage);
+  }
+  assert.equal(validateDesign({ ...design, duplex: true, rules: {} }).rules.roofUsage, 'duplex');
+}
+
 async function main() {
   testSection();
   testRuleSection();
+  testRoofUsage();
   const input = { arsa_alani: 1000, taks: 0.4, kaks: 2, daire_sayisi: 31, dukkan_sayisi: 1, insaat_alani: 1600, binalar_detay: JSON.stringify([{ daire_sayisi: 31, dukkan_sayisi: 1, normal_kat: 8, bodrum_kat: 1, giriste_daire_yok: false }]) };
   const test = simulate(input, { ...emptyScenario(), bonus: true, slope: true, exposedFloors: 2, narrow: true, heightLimit: true });
   assert.equal(test.kaksArea, 2000); assert.equal(test.gross, 2600); assert.equal(test.slopeArea, 800);
@@ -222,18 +274,21 @@ async function main() {
     const ruleDesign = {
       ...sectionScenario.design,
       normalFloors: 7,
-      rules: { ...DEFAULT_RULE_SETTINGS, use: 'mixed', order: 'attached', projection: 'closed', roof: 'terrace', mezzanine: true, sideProjection: true },
+      rules: { ...DEFAULT_RULE_SETTINGS, use: 'mixed', order: 'attached', projection: 'closed', roofShape: 'mansard', roofUsage: 'independent', mezzanine: true, sideProjection: true },
       units: {
         ...sectionScenario.design.units,
         'ground:0': { type: 'shop', isContractorShare: false },
         'ground:1': { isContractorShare: true },
+        'roof:0': { isContractorShare: true, gross: 90 },
       },
     };
     [status, saved] = await call(`/${id}/scenario`, 'PUT', { ...scenario, design: ruleDesign });
     assert.equal(status, 200);
     const persisted = JSON.parse(saved.architectural_scenarios);
     assert.equal(persisted.design.rules.projection, 'open');
-    assert.equal(persisted.design.rules.roof, 'terrace');
+    assert.equal(persisted.design.rules.roofShape, 'mansard');
+    assert.equal(persisted.design.rules.roofUsage, 'independent');
+    assert.equal(persisted.design.units['roof:0'].isContractorShare, true);
     assert.equal(persisted.design.rules.mezzanine, false);
     assert.equal(persisted.design.rules.sideProjection, false);
     assert.equal(persisted.design.rules.sideGarden, false);

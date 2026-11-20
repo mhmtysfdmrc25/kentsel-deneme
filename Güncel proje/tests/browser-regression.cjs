@@ -173,11 +173,25 @@ async function simulator(page, nav, projectId, root) {
   await page.getByLabel('En düşük iskân / açıklık / giriş kotu (m)', { exact: true }).fill('3.5');
   assert.equal(await page.getByLabel(/Bodrum otopark girişi/).isDisabled(), false);
   await flooding.uncheck();
-  await radio('Mansard (Kırık) Çatı').check();
+  const independentRoof = radio('Bağımsız Çatı Katı Dairesi');
+  const duplexRoof = radio('Son Kat ile Bağlantılı Dubleks (Piyes)');
+  const pitchedRoof = radio('Eğimli Çatı (Kırma / Beşik)');
+  assert.equal(await independentRoof.isDisabled(), true);
+  assert.match(await drawing.locator('[data-roof="pitched"]').textContent(), /KÖR ÇATI \(ORTAK ALAN\)/);
+  assert.match(await drawing.locator('.section-area-table').getByRole('row', { name: /ÇATI BOŞLUĞU/ }).innerText(), /0,00 m²/);
+  await radio('Mansard Çatı').check();
   assert.equal(await drawing.locator('[data-roof="mansard"]').count(), 1);
+  assert.equal(await independentRoof.isEnabled(), true);
+  await duplexRoof.check();
+  assert.equal(await drawing.locator('[data-roof-arrow]').count(), 3);
   await radio('Teras / Yeşil Çatı').check();
   assert.equal(await drawing.locator('[data-roof="terrace"]').count(), 1);
-  await radio('Çatı Arası Piyesi (Son Kat Dubleks)').check();
+  assert.match(await drawing.locator('[data-roof="terrace"]').textContent(), /1,10 m/);
+  assert.equal(await duplexRoof.count(), 0);
+  assert.equal(await drawing.locator('[data-roof-arrow]').count(), 0);
+  await pitchedRoof.check();
+  await duplexRoof.check();
+  await page.getByLabel('Çatı Piyesi Toplam Brüt Alanı (m²)', { exact: true }).fill('90');
   await page.getByLabel(/Dar Arsa/).check();
   await page.getByLabel(/YENÇOK/).check();
   await page.getByText(/Kayıp Emsal Riski/i).first().waitFor();
@@ -206,8 +220,9 @@ async function simulator(page, nav, projectId, root) {
   assert.equal(await drawing.locator('[data-unit="normal-6:0"]').getAttribute('data-contractor-share'), 'false');
   assert.equal(await drawing.locator('[data-unit="normal-6:1"]').getAttribute('data-contractor-share'), 'true');
   assert.equal(await drawing.locator('[data-unit="normal-1:0"]').getAttribute('data-contractor-share'), 'true');
-  assert.equal(await drawing.locator('[data-roof="duplex"]').count(), 1);
+  assert.equal(await drawing.locator('[data-roof="pitched"][data-roof-usage="duplex"]').count(), 1);
   assert.equal(await drawing.locator('[data-roof-arrow]').count(), 3);
+  assert.match(await drawing.locator('[data-unit="normal-6:0"]').textContent(), /BRÜT: 163,33 m²/);
   assert.equal(await drawing.locator('[data-isolation-band]').count(), 1);
   assert.equal(await drawing.locator('[data-grade="sloped"]').count(), 1);
   assert.equal(await drawing.locator('[data-excess-frame]').count(), 1);
@@ -278,7 +293,28 @@ async function simulator(page, nav, projectId, root) {
   assert.equal(await printSheet.locator('[data-floor^="normal-"]').count(), 18);
   await assertPDF('uzun-kesit.pdf', 2);
   await page.emulateMedia({ media: 'screen' });
-  console.log('Tarayıcı: mevzuat kilitleri, tekil tarama, şematik çizim, kayıt/yenileme ve üç PDF senaryosu geçti.');
+  await floors.fill('6');
+  await openGroup('Çatı, Son Kat & Özel Kısıtlar');
+  await radio('Mansard Çatı').check();
+  await independentRoof.check();
+  assert.equal(await drawing.locator('[data-floor="roof"] [data-unit]').count(), 3);
+  assert.equal(await drawing.locator('[data-roof-arrow]').count(), 0);
+  await drawing.locator('[data-unit="roof:0"]').click();
+  await selectedUnit.getByLabel('Brüt m²', { exact: true }).fill('72');
+  await share.check();
+  await selectedUnit.getByRole('button', { name: 'Uygula', exact: true }).click();
+  await page.getByRole('button', { name: 'Senaryoyu Kaydet', exact: true }).click();
+  await page.getByText('Senaryo kaydedildi.', { exact: true }).waitFor();
+  await page.reload();
+  await nav('Mimari Simülatör').click();
+  assert.equal(await drawing.locator('[data-unit="roof:0"]').getAttribute('data-contractor-share'), 'true');
+  assert.match(await drawing.locator('.section-area-table').getByRole('row', { name: /ÇATI KATI/ }).innerText(), /132,00 m²/);
+  await page.emulateMedia({ media: 'print' });
+  assert.equal(await printSheet.locator('[data-unit="roof:0"] [fill^="url("]').count(), 1);
+  assert.match(await notesPage.locator('.section-legal-notes').innerText(), /Mansard çatıda bağımsız daire senaryosu/);
+  await assertPDF('mansard-kesit.pdf', 2);
+  await page.emulateMedia({ media: 'screen' });
+  console.log('Tarayıcı: çatı şekli ve kullanım kilitleri, metraj, tarama, kayıt ve dört PDF senaryosu geçti.');
 }
 
 async function editSheet(page) {

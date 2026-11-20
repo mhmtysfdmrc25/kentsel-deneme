@@ -28,7 +28,7 @@ const left = 155;
 const buildingWidth = 592;
 const headerHeight = 49;
 const rowHeight = 53;
-const roofHeight = 48;
+const roofHeights = { pitched: 48, mansard: 86, terrace: 38 };
 const isolationHeight = 24;
 const squareMetres = new Intl.NumberFormat('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const area = (value: number | null) => value === null ? '—' : `${squareMetres.format(value)} m²`;
@@ -58,13 +58,13 @@ function Drawing({ design, section, onUnit, onFloor, settings, sloped, excess }:
   const commercialGround = settings?.use === 'ground-commercial' || settings?.use === 'mixed' || settings?.use === 'commercial';
   const firstNormal = section.floors.find(floor => floor.kind === 'normal');
   const projection = section.projection ?? settings?.projection ?? 'none';
-  const roof = section.roof ?? 'duplex';
+  const roofShape = section.roofShape ?? 'pitched';
   let nextY = headerHeight;
   const layout = section.floors.map(floor => {
     const isolation = hasIsolation && floor.id === 'basement-1';
     const top = nextY + (isolation ? isolationHeight : 0);
     const trade = settings?.use === 'commercial' || (floor.kind === 'ground' && commercialGround) || floor.units.some(unit => unit.type === 'shop');
-    const height = floor.kind === 'roof' ? roofHeight : trade || (floor.kind === 'ground' && settings?.mezzanine) ? 71 : rowHeight;
+    const height = floor.kind === 'roof' ? roofHeights[roofShape] : trade || (floor.kind === 'ground' && settings?.mezzanine) ? 71 : rowHeight;
     nextY = top + height;
     const setback = Boolean(settings?.stepped && floor.id === firstNormal?.id);
     const inset = !(floor.kind === 'basement' && floor.service) && (floor.inset || setback);
@@ -72,6 +72,7 @@ function Drawing({ design, section, onUnit, onFloor, settings, sloped, excess }:
     return { floor, top, height, isolation, inset, setback, rowWidth, x: setback ? left : left + (buildingWidth - rowWidth) / 2 };
   });
   const ground = layout.find(row => row.floor.kind === 'ground');
+  const roofBase = layout.find(row => row.floor.kind === 'normal') ?? ground;
   const firstBasement = layout.find(row => row.floor.id === 'basement-1');
   const grade = ground ? ground.top + ground.height : firstBasement?.top ?? nextY;
   const exteriorTop = layout.find(row => row.floor.kind !== 'roof')?.top ?? headerHeight;
@@ -83,6 +84,61 @@ function Drawing({ design, section, onUnit, onFloor, settings, sloped, excess }:
       action();
     }
   };
+
+  function drawUnits(floor: SectionFloor, x: number, top: number, rowWidth: number, height: number) {
+    const unitWidth = rowWidth / floor.units.length;
+    return floor.units.map((unit, index) => {
+      const unitX = x + index * unitWidth;
+      const center = unitX + unitWidth / 2;
+      const action = onUnit ? () => onUnit(unit, floor) : null;
+      const suffix = unit.type === 'duplex' ? ' (DUBLEKS)' : '';
+      const baseTitle = suffix ? unit.title.replace(/\s*\(DUBLEKS\)\s*$/iu, '') : unit.title;
+      const fullTitle = baseTitle + suffix;
+      const title = shortened(baseTitle, Math.max(30, Math.floor(unitWidth / 4.5)) - suffix.length) + suffix;
+      const gross = `BRÜT: ${area(unit.gross)}`;
+      const generalGross = `GENEL BRÜT: ${area(unit.totalGross)}`;
+      const textTop = top + height - rowHeight;
+      return <g key={unit.id} data-unit={unit.id} data-contractor-share={unit.isContractorShare} aria-label={action ? `${floor.label}, ${fullTitle} düzenle` : undefined} role={action ? 'button' : undefined} tabIndex={action ? 0 : undefined} onClick={action ?? undefined} onKeyDown={action ? event => handleKey(event, action) : undefined} className={action ? 'section-interactive' : undefined}>
+        <title>{`${fullTitle} · Brüt ${area(unit.gross)} · Genel brüt ${area(unit.totalGross)}`}</title>
+        {unit.isContractorShare && <rect x={unitX} y={top} width={unitWidth} height={height} fill={`url(#${hatch})`} />}
+        {index > 0 && <path d={`M${unitX} ${top}v${height}`} fill="none" stroke="#000" strokeWidth=".75" />}
+        <rect x={unitX + 1} y={top + 1} width={unitWidth - 2} height={height - 2} fill="transparent" className="section-hitbox" />
+        {unit.roofArrow && <path data-roof-arrow="" d={`M${center} ${top + 9}v-16m-4 4 4-4 4 4`} stroke="#000" strokeWidth=".9" fill="none" />}
+        <text x={center} y={textTop + 18} textAnchor="middle" className="section-unit-title section-ink" {...fit(title, unitWidth - 8, 6.5)}>{title}</text>
+        <text x={center} y={textTop + 32} textAnchor="middle" className="section-unit-value section-ink" {...fit(gross, unitWidth - 8, 5.1)}>{gross}</text>
+        <text x={center} y={textTop + 45} textAnchor="middle" className="section-unit-value section-ink" {...fit(generalGross, unitWidth - 8, 5.1)}>{generalGross}</text>
+      </g>;
+    });
+  }
+
+  function drawRoof(floor: SectionFloor, top: number, height: number) {
+    const x = roofBase?.x ?? left;
+    const roofWidth = roofBase?.rowWidth ?? buildingWidth;
+    const end = x + roofWidth;
+    const center = x + roofWidth / 2;
+    const bottom = top + height;
+    const shoulderInset = roofWidth * .11;
+    const label = roofShape === 'terrace' ? 'TERAS / YEŞİL ÇATI'
+      : roofShape === 'mansard' ? 'KÖR ÇATI' : 'KÖR ÇATI (ORTAK ALAN)';
+
+    return <g data-roof={roofShape} data-roof-usage={section.roofUsage}>
+      {roofShape === 'terrace'
+        ? <g fill="none" stroke="#000" strokeWidth="1.1">
+          <path d={`M${x} ${bottom - 22}V${bottom}H${end}V${bottom - 22} M${x} ${bottom - 4}H${end}`} />
+          <text x={end - 7} y={bottom - 13} textAnchor="end" className="section-unit-value" fill="#000" stroke="none">1,10 m</text>
+        </g>
+        : <polygon fill="#fff" stroke="#000" strokeWidth="1.1" points={roofShape === 'mansard'
+          ? `${x},${bottom} ${x + shoulderInset},${top + 24} ${center},${top + 5} ${end - shoulderInset},${top + 24} ${end},${bottom}`
+          : `${x},${bottom} ${center},${top + 5} ${end},${bottom}`} />}
+      {(section.roofUsage === 'cold' || roofShape === 'terrace') && (
+        <text x={center} y={bottom - (roofShape === 'terrace' ? 13 : 11)} textAnchor="middle" className="section-unit-title">{label}</text>
+      )}
+      {floor.units.length > 0 && <g>
+        <rect x={x + shoulderInset} y={bottom - rowHeight} width={roofWidth - 2 * shoulderInset} height={rowHeight} fill="#fff" stroke="#000" strokeWidth="1.1" />
+        {drawUnits(floor, x + shoulderInset, bottom - rowHeight, roofWidth - 2 * shoulderInset, rowHeight)}
+      </g>}
+    </g>;
+  }
 
   return <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMin meet" aria-label="Şematik bina kesiti" className="section-svg">
     <defs>
@@ -104,15 +160,10 @@ function Drawing({ design, section, onUnit, onFloor, settings, sloped, excess }:
     {layout.map(({ floor, top, height, rowWidth, x, inset, isolation, setback }) => {
       const y = top + height / 2;
       const clickable = floor.service && onFloor ? () => onFloor(floor) : null;
-      const unitWidth = rowWidth / Math.max(1, floor.units.length);
       const serviceLabel = floor.serviceLabel || design.serviceTitle?.trim() || 'OTOPARK / SIĞINAK';
       const mezzanine = floor.kind === 'ground' && settings?.mezzanine;
       const balcony = floor.kind === 'normal' && (projection === 'open' || projection === 'mixed');
       const center = left + buildingWidth / 2;
-      const roofLeft = left;
-      const roofRight = right - (settings?.stepped && firstNormal ? buildingWidth * .14 : 0);
-      const roofMiddle = (roofLeft + roofRight) / 2;
-      const roofEnd = top + height;
 
       return <g key={floor.id} data-floor={floor.id} data-inset={inset} data-setback={setback} data-contractor={floor.units.some(unit => unit.isContractorShare)}>
         {isolation && <g data-isolation-band="">
@@ -122,14 +173,7 @@ function Drawing({ design, section, onUnit, onFloor, settings, sloped, excess }:
         <text x="2" y={y + 4} className="section-floor-label">{floor.label}</text>
         <path d={`M${left - 20} ${y}h11`} stroke="#000" strokeWidth=".55" />
         {floor.kind === 'roof'
-          ? <g data-roof={roof} fill="#fff" stroke="#000" strokeWidth="1.1">
-              {roof === 'terrace'
-                ? <path d={`M${roofLeft} ${roofEnd - 25}V${roofEnd}H${roofRight}V${roofEnd - 25} M${roofLeft} ${roofEnd - 11}H${roofRight}`} fill="none" />
-                : <polygon points={roof === 'mansard'
-                  ? `${roofLeft},${roofEnd} ${roofLeft + 64},${top + 17} ${roofMiddle},${top + 5} ${roofRight - 64},${top + 17} ${roofRight},${roofEnd}`
-                  : `${roofLeft},${roofEnd} ${roofMiddle},${top + 5} ${roofRight},${roofEnd}`} />}
-              {roof !== 'duplex' && <text x={roofMiddle} y={roofEnd - (roof === 'terrace' ? 17 : 10)} textAnchor="middle" className="section-unit-title" fill="#000" stroke="none">{roof === 'void' ? 'ÇATI BOŞLUĞU (ORTAK ALAN)' : roof === 'mansard' ? 'MANSART ÇATI' : 'TERAS / YEŞİL ÇATI'}</text>}
-            </g>
+          ? drawRoof(floor, top, height)
           : <g>
               <rect x={x} y={top} width={rowWidth} height={height} fill="#fff" stroke="#000" strokeWidth="1.1" />
               {floor.service
@@ -138,28 +182,7 @@ function Drawing({ design, section, onUnit, onFloor, settings, sloped, excess }:
                     <text x={x + rowWidth / 2} y={y + (mezzanine ? 6 : -3)} textAnchor="middle" className="section-unit-title section-ink" {...fit(serviceLabel, rowWidth - 16, 6.5)}>{serviceLabel}</text>
                     <text x={x + rowWidth / 2} y={y + (mezzanine ? 21 : 12)} textAnchor="middle" className="section-unit-value section-ink">BRÜT: {area(floor.area)}</text>
                   </g>
-                : floor.units.map((unit, index) => {
-                    const unitX = x + index * unitWidth;
-                    const center = unitX + unitWidth / 2;
-                    const action = onUnit ? () => onUnit(unit, floor) : null;
-                    const suffix = unit.type === 'duplex' ? ' (DUBLEKS)' : '';
-                    const baseTitle = suffix ? unit.title.replace(/\s*\(DUBLEKS\)\s*$/iu, '') : unit.title;
-                    const fullTitle = baseTitle + suffix;
-                    const title = shortened(baseTitle, Math.max(30, Math.floor(unitWidth / 4.5)) - suffix.length) + suffix;
-                    const gross = `BRÜT: ${area(unit.gross)}`;
-                    const generalGross = `GENEL BRÜT: ${area(unit.totalGross)}`;
-                    const textTop = top + height - rowHeight;
-                    return <g key={unit.id} data-unit={unit.id} data-contractor-share={unit.isContractorShare} aria-label={action ? `${floor.label}, ${fullTitle} düzenle` : undefined} role={action ? 'button' : undefined} tabIndex={action ? 0 : undefined} onClick={action ?? undefined} onKeyDown={action ? event => handleKey(event, action) : undefined} className={action ? 'section-interactive' : undefined}>
-                      <title>{`${fullTitle} · Brüt ${area(unit.gross)} · Genel brüt ${area(unit.totalGross)}`}</title>
-                      {unit.isContractorShare && <rect x={unitX} y={top} width={unitWidth} height={height} fill={`url(#${hatch})`} />}
-                      {index > 0 && <path d={`M${unitX} ${top}v${height}`} fill="none" stroke="#000" strokeWidth=".75" />}
-                      <rect x={unitX + 1} y={top + 1} width={unitWidth - 2} height={height - 2} fill="transparent" className="section-hitbox" />
-                      {unit.roofArrow && roof === 'duplex' && <path data-roof-arrow="" d={`M${center} ${top + 9}v-16m-4 4 4-4 4 4`} stroke="#000" strokeWidth=".9" fill="none" />}
-                      <text x={center} y={textTop + 18} textAnchor="middle" className="section-unit-title section-ink" {...fit(title, unitWidth - 8, 6.5)}>{title}</text>
-                      <text x={center} y={textTop + 32} textAnchor="middle" className="section-unit-value section-ink" {...fit(gross, unitWidth - 8, 5.1)}>{gross}</text>
-                      <text x={center} y={textTop + 45} textAnchor="middle" className="section-unit-value section-ink" {...fit(generalGross, unitWidth - 8, 5.1)}>{generalGross}</text>
-                    </g>;
-                  })}
+                : drawUnits(floor, x, top, rowWidth, height)}
               {balcony && <path data-balcony-divisions="" d={`M${x + 12} ${top}v${height} M${x + rowWidth - 12} ${top}v${height}`} fill="none" stroke="#000" strokeWidth=".7" strokeDasharray="3 3" pointerEvents="none" />}
               {mezzanine && <g data-mezzanine="" pointerEvents="none">
                 <path d={`M${x} ${top + height / 3}h${rowWidth}`} fill="none" stroke="#000" strokeWidth=".7" />
@@ -190,7 +213,7 @@ function AreaTable({ floors, total, onFloor, compact = false }: { floors: Sectio
     <thead><tr><th scope="col">Kat</th><th scope="col">{compact ? 'm²' : 'İnşaat alanı'}</th></tr></thead>
     <tbody>
       {floors.map(floor => <tr key={floor.id}>
-        <th scope="row">{onFloor ? <button type="button" aria-label={`${floor.label} alanını düzenle`} onClick={() => onFloor(floor)}>{floor.label}<span aria-hidden="true"> ↗</span></button> : floor.label}</th>
+        <th scope="row">{onFloor && (floor.kind !== 'roof' || floor.units.length > 0) ? <button type="button" aria-label={`${floor.label} alanını düzenle`} onClick={() => onFloor(floor)}>{floor.label}<span aria-hidden="true"> ↗</span></button> : floor.label}</th>
         <td>{compact && floor.area !== null ? squareMetres.format(floor.area) : area(floor.area)}</td>
       </tr>)}
     </tbody>

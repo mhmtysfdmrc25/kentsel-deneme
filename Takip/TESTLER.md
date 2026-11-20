@@ -2,6 +2,12 @@
 
 Bu dosyada çalıştırılan kontroller ve sonuçları tutulur.
 
+## Çatı şekli, kullanımı ve kesit
+
+- Üretim derlemesi, `npm test` ve macOS Chrome regresyonu geçti. Eski çatı seçimleri ile dubleks bayrağının yeni alanlara aktarımı, teras ve eğimli çatı kilitleri, piyes alanının bir kez sayılması ve daha önceki proje ile maliyet akışları doğrulandı.
+- Mansard içindeki dairenin metrajı ve tekil müteahhit payı kaydedilip yeniden açıldı. Özet tablosundaki çatı toplamı, KAKS hesabı ve ikinci sayfadaki parsel plan notu uyarısı sınandı.
+- Dört yatay A4 çıktı üretildi. Tek sayfalık kesit, iki sayfalık kesit ve notlar, 18 katlı kesit ve bağımsız mansard paftası doğru sayfa sayısıyla çıktı. Dubleks ve mansard paftaları Poppler ile görsel olarak incelendi.
+
 ## Mimari Simülatör kural motoru ve teknik not paftası
 
 - Kural motoru testlerinde konutlu senaryoda 6 ve 7 normal kat sınırı, kapalı ve karma çıkmanın kilidi, açık çıkmaya geçiş, konut altı ticarette asma kat ve bodrum konutu kilidi doğrulandı. Bitişik nizamda yan bahçe ve çıkma, portik koşulu ve taşkında kret +1,50 m sınırı da sınandı.

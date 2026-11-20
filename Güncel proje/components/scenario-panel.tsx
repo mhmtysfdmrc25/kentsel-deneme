@@ -70,13 +70,14 @@ function SectionEditor({ editing, override, floorOverride, serviceTitle, floorSe
           <p className="text-xs text-[#536c64]"><span aria-hidden="true">🔒 </span>{residenceLockReason}</p>
         )}
         <div className="grid grid-cols-2 gap-3">
-          <label className="block text-sm font-medium">Brüt m²<input name="gross" type="number" min="0" max={MAX_SECTION_AREA} step="any" defaultValue={override?.gross ?? ''} placeholder={areaText(unit.gross)} className={`mt-1 ${inputClass}`} /></label>
+          <label className="block text-sm font-medium">{unit.roofArrow ? 'Piyes Hariç Brüt m²' : 'Brüt m²'}<input name="gross" type="number" min="0" max={MAX_SECTION_AREA} step="any" defaultValue={override?.gross ?? ''} placeholder={areaText(unit.gross === null ? null : unit.gross - (unit.roofArea ?? 0))} className={`mt-1 ${inputClass}`} /></label>
           <label className="block text-sm font-medium">Genel Brüt m²<input readOnly value={areaText(unit.totalGross)} className={`mt-1 ${inputClass} bg-[#f2f6f4]`} /></label>
         </div>
         {isShareableUnit(type) && <Check checked={share} onChange={setShare}>Müteahhit Payı (Taralı Göster)</Check>}
       </> : <>
         {floor.service && <label className="block text-sm font-medium">Başlık<input name="title" maxLength={MAX_SECTION_TITLE_LENGTH} defaultValue={serviceTitle ?? ''} placeholder="OTOPARK / SIĞINAK" className={`mt-1 ${inputClass}`} /></label>}
-        <label className="block text-sm font-medium">Kat toplam inşaat alanı (m²)<input name="area" type="number" min="0" max={MAX_SECTION_AREA} step="any" defaultValue={floorOverride ?? ''} placeholder={areaText(floor.area)} className={`mt-1 ${inputClass}`} /></label>
+        <label className="block text-sm font-medium">{floor.kind === 'roof' ? 'Varsayılan çatı katı alanı (m²)' : 'Kat toplam inşaat alanı (m²)'}<input name="area" type="number" min="0" max={MAX_SECTION_AREA} step="any" defaultValue={floorOverride ?? ''} placeholder={areaText(floor.area)} className={`mt-1 ${inputClass}`} /></label>
+        {floor.kind === 'roof' && <p className="text-xs text-[#536c64]">Bu alan, kendi brüt alanı girilmemiş dairelerin varsayılanını belirler.</p>}
       </>}
       <p className="text-xs text-[#536c64]">Alanı boş bırakırsan otomatik değer kullanılır.</p>
       <div className="flex justify-end gap-3">
@@ -100,7 +101,7 @@ function initialDesign(project: Project, scenario: SimulatorScenario): BuildingD
   const design = scenario.design ?? emptyDesign();
   const rules = design.rules ?? {
     ...DEFAULT_RULE_SETTINGS,
-    roof: design.duplex ? 'duplex' as const : DEFAULT_RULE_SETTINGS.roof,
+    roofUsage: design.duplex ? 'duplex' as const : DEFAULT_RULE_SETTINGS.roofUsage,
     projection: scenario.projection ? (scenario.projectionType === 'closed' ? 'closed' as const : 'open' as const) : 'none' as const,
   };
   return { ...design, rules: normalizeRuleSettings(project, design, rules, scenario) };
@@ -160,7 +161,7 @@ export function ScenarioPanel({ project }: { project: Project }) {
         ...scenario,
         projection: rules.projection !== 'none',
         projectionType: rules.projection === 'closed' || rules.projection === 'mixed' ? 'closed' : rules.projection === 'none' ? '' : 'open',
-        design: { ...design, duplex: rules.roof === 'duplex' },
+        design: { ...design, duplex: rules.roofUsage === 'duplex' },
       });
       const result = await fetch(`/api/projects/${project.id}/scenario`, {
         method: 'PUT',
